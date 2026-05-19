@@ -6,6 +6,8 @@
 
 WorkTreeDesk 是一个基于 Tauri、React 和 Vite 构建的桌面应用，聚焦 Git Worktree 管理与 Code Review 场景。
 
+> 因为没有做签名的原因? Mac安装包可能会被误报, 需要在系统设置里允许安装, 具体操作可以参考这个链接: https://support.apple.com/zh-cn/HT202491
+
 ## 功能概览
 
 - 统一管理本地 Git Worktree
