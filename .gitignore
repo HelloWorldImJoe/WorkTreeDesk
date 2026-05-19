@@ -17,7 +17,6 @@ node_modules/
 .vscode/tasks.json
 
 # npm, yarn and bun lock files
-package-lock.json
 yarn.lock
 bun.lockb
 
