@@ -1,7 +1,9 @@
 :root {
   --sidebar-width: 280px;
+  --status-banner-width: 320px;
   --page-bg: #f6f8fa;
   --surface: #ffffff;
+  --titlebar-surface: #ffffff;
   --surface-subtle: #f3f4f6;
   --surface-hover: #eef1f4;
   --text-primary: #1f2328;
@@ -34,6 +36,7 @@
 [data-theme="dark"] {
   --page-bg: #0d1117;
   --surface: #161b22;
+  --titlebar-surface: #0d1117;
   --surface-subtle: #21262d;
   --surface-hover: #262c36;
   --text-primary: #e6edf3;
@@ -165,6 +168,7 @@ input::placeholder {
 .titleBar {
   -webkit-app-region: drag;
   align-items: end;
+  background: var(--titlebar-surface);
   display: grid;
   gap: var(--space-4);
   grid-column: 1 / -1;
@@ -333,21 +337,76 @@ input::placeholder {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   color: var(--text-secondary);
-  display: inline-flex;
-  gap: var(--space-2);
+  column-gap: var(--space-2);
+  display: grid;
+  flex: 0 0 var(--status-banner-width);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   min-height: 40px;
   min-width: 0;
+  position: relative;
   padding: 0 var(--space-3);
+  width: var(--status-banner-width);
 }
 
 .reviewTitleBar .statusBanner {
-  max-width: min(420px, 100%);
+  max-width: 100%;
 }
 
-.statusBanner span {
+.statusBannerText {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.statusBannerInfo {
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: inherit;
+  min-height: 24px;
+  padding: 0;
+  width: 24px;
+}
+
+.statusBannerInfo:hover:not(:disabled),
+.statusBannerInfo:focus-visible {
+  background: var(--surface-hover);
+}
+
+.statusBannerPopover {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  display: none;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--space-2));
+  width: min(360px, calc(100vw - 32px));
+  z-index: 20;
+}
+
+.statusBanner:hover .statusBannerPopover,
+.statusBanner:focus-within .statusBannerPopover {
+  display: grid;
+}
+
+.statusDetailList {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.statusDetailRow {
+  display: grid;
+  gap: 2px;
+}
+
+.statusDetailRow strong {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
 }
 
 .statusBanner.busy,
@@ -1395,6 +1454,11 @@ input::placeholder {
   .modeSwitcher,
   .compactThemeButtons {
     flex-wrap: wrap;
+  }
+
+  .statusBanner {
+    flex-basis: 100%;
+    width: 100%;
   }
 
   .reviewTitleBar {

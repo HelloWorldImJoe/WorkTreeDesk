@@ -14,6 +14,7 @@ import {
   FolderOpen,
   GitBranch,
   GitCommit,
+  Info,
   Loader2,
   Monitor,
   Moon,
@@ -40,7 +41,8 @@ type RepositoryInfo = {
   name: string;
   root: string;
   common_dir: string;
-  gitee?: GiteeRepositoryInfo | null;
+  provider?: ReviewProviderInfo | null;
+  gitee?: ReviewProviderInfo | null;
   current_branch?: string | null;
   worktrees: WorktreeInfo[];
 };
@@ -57,15 +59,31 @@ type BranchInfo = {
   current: boolean;
 };
 
-type GiteeRepositoryInfo = {
-  remote_name: string;
-  owner: string;
-  repo: string;
-  web_url: string;
-  clone_url: string;
+type ReviewProviderKind = "gitee" | "github" | "gitlab";
+
+type ReviewProviderCapabilities = {
+  approve_review: boolean;
+  reset_review: boolean;
+  approve_test: boolean;
+  reset_test: boolean;
+  code_review: boolean;
+  cleanup_worktree: boolean;
 };
 
-type GiteePullRequestInfo = {
+type ReviewProviderInfo = {
+  kind: ReviewProviderKind;
+  display_name: string;
+  remote_name: string;
+  host: string;
+  owner: string;
+  repo: string;
+  full_name: string;
+  web_url: string;
+  clone_url: string;
+  capabilities: ReviewProviderCapabilities;
+};
+
+type PullRequestInfo = {
   number: number;
   title: string;
   body?: string | null;
@@ -81,6 +99,8 @@ type GiteePullRequestInfo = {
   target_repo?: string | null;
   review_status?: string | null;
   test_status?: string | null;
+  review_action_allowed?: boolean | null;
+  review_action_blocked_reason?: string | null;
 };
 
 type CodeReviewResult = {
@@ -90,10 +110,13 @@ type CodeReviewResult = {
 };
 
 type PullRequestCacheEntry = {
-  items: GiteePullRequestInfo[];
-  details: Record<number, GiteePullRequestInfo>;
+  items: PullRequestInfo[];
+  details: Record<number, PullRequestInfo>;
   selectedNumber: number | null;
 };
+
+type ProviderTokenMap = Partial<Record<ReviewProviderKind, string>>;
+type RepoProviderTokenMap = Record<string, string>;
 
 type AppView = "workspace" | "reviews";
 
@@ -121,6 +144,8 @@ const SCAN_RESULT_KEY = "worktree-desk.scanResult";
 const EDITOR_MAP_KEY = "worktree-desk.editorMap";
 const HIDDEN_REPO_IDS_KEY = "worktree-desk.hiddenRepoIds";
 const GITEE_TOKEN_KEY = "worktree-desk.giteeToken";
+const PROVIDER_TOKENS_KEY = "worktree-desk.providerTokens";
+const REPO_PROVIDER_TOKENS_KEY = "worktree-desk.repoProviderTokens";
 const REVIEW_CLEANUP_PREFERENCE_KEY = "worktree-desk.reviewCleanupPreference";
 const REVIEW_WINDOW_REPO_KEY = "worktree-desk.reviewWindowRepo";
 const REVIEW_WINDOW_LABEL = "reviews";
@@ -150,10 +175,93 @@ function saveEditorMap(map: Record<string, string>) {
   } catch {}
 }
 
+function defaultCapabilities(kind: ReviewProviderKind): ReviewProviderCapabilities {
+  return {
+    approve_review: true,
+    reset_review: kind !== "github",
+    approve_test: kind === "gitee",
+    reset_test: kind === "gitee",
+    code_review: true,
+    cleanup_worktree: true,
+  };
+}
+
+function normalizeProvider(provider: any): ReviewProviderInfo | null {
+  if (!provider || typeof provider !== "object") return null;
+
+  const kind = provider.kind === "gitee" || provider.kind === "github" || provider.kind === "gitlab"
+    ? provider.kind
+    : provider.web_url?.includes("github.com")
+      ? "github"
+      : provider.web_url?.includes("gitlab")
+        ? "gitlab"
+        : "gitee";
+  const owner = typeof provider.owner === "string" ? provider.owner : "";
+  const repo = typeof provider.repo === "string" ? provider.repo : "";
+  const fullName = typeof provider.full_name === "string" && provider.full_name
+    ? provider.full_name
+    : owner && repo
+      ? `${owner}/${repo}`
+      : repo;
+  const host = typeof provider.host === "string" && provider.host
+    ? provider.host
+    : kind === "github"
+      ? "github.com"
+      : kind === "gitlab"
+        ? "gitlab.com"
+        : "gitee.com";
+  const displayName = typeof provider.display_name === "string" && provider.display_name
+    ? provider.display_name
+    : kind === "github"
+      ? "GitHub"
+      : kind === "gitlab"
+        ? "GitLab"
+        : "Gitee";
+
+  return {
+    kind,
+    display_name: displayName,
+    remote_name: typeof provider.remote_name === "string" ? provider.remote_name : "origin",
+    host,
+    owner,
+    repo,
+    full_name: fullName,
+    web_url: typeof provider.web_url === "string" ? provider.web_url : `https://${host}/${fullName}`,
+    clone_url: typeof provider.clone_url === "string" ? provider.clone_url : `https://${host}/${fullName}.git`,
+    capabilities: provider.capabilities && typeof provider.capabilities === "object"
+      ? {
+          approve_review: Boolean(provider.capabilities.approve_review),
+          reset_review: Boolean(provider.capabilities.reset_review),
+          approve_test: Boolean(provider.capabilities.approve_test),
+          reset_test: Boolean(provider.capabilities.reset_test),
+          code_review: Boolean(provider.capabilities.code_review ?? true),
+          cleanup_worktree: Boolean(provider.capabilities.cleanup_worktree ?? true),
+        }
+      : defaultCapabilities(kind),
+  };
+}
+
+function normalizeRepositoryInfo(repo: any): RepositoryInfo {
+  const provider = normalizeProvider(repo?.provider ?? repo?.gitee);
+  return {
+    ...repo,
+    provider,
+    gitee: provider?.kind === "gitee" ? provider : null,
+  };
+}
+
 function loadCachedResult(): ScanResult | null {
   try {
     const raw = localStorage.getItem(SCAN_RESULT_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        ...parsed,
+        repositories: Array.isArray(parsed?.repositories)
+          ? parsed.repositories.map(normalizeRepositoryInfo)
+          : [],
+      };
+    }
   } catch {}
   return null;
 }
@@ -184,24 +292,96 @@ function saveHiddenRepoIds(repoIds: string[]) {
   } catch {}
 }
 
-function loadGiteeToken() {
+function loadProviderTokens(): ProviderTokenMap {
   try {
-    return localStorage.getItem(GITEE_TOKEN_KEY) || "";
-  } catch {
-    return "";
-  }
+    const raw = localStorage.getItem(PROVIDER_TOKENS_KEY);
+    const legacyGiteeToken = localStorage.getItem(GITEE_TOKEN_KEY) || "";
+    const parsed = raw ? JSON.parse(raw) : {};
+    const next: ProviderTokenMap = {
+      gitee: typeof parsed?.gitee === "string" ? parsed.gitee : legacyGiteeToken,
+      github: typeof parsed?.github === "string" ? parsed.github : "",
+      gitlab: typeof parsed?.gitlab === "string" ? parsed.gitlab : "",
+    };
+
+    if (legacyGiteeToken && next.gitee !== legacyGiteeToken) {
+      next.gitee = legacyGiteeToken;
+    }
+
+    return next;
+  } catch {}
+    return { gitee: "", github: "", gitlab: "" };
 }
 
-function saveGiteeToken(token: string) {
+
+function saveProviderTokens(tokens: ProviderTokenMap) {
   try {
-    if (token.trim()) {
-      localStorage.setItem(GITEE_TOKEN_KEY, token.trim());
+    const next = {
+      gitee: tokens.gitee?.trim() || "",
+      github: tokens.github?.trim() || "",
+      gitlab: tokens.gitlab?.trim() || "",
+    };
+    localStorage.setItem(PROVIDER_TOKENS_KEY, JSON.stringify(next));
+    if (next.gitee) {
+      localStorage.setItem(GITEE_TOKEN_KEY, next.gitee);
     } else {
       localStorage.removeItem(GITEE_TOKEN_KEY);
     }
   } catch {}
 }
 
+function loadRepoProviderTokens(): RepoProviderTokenMap {
+  try {
+    const raw = localStorage.getItem(REPO_PROVIDER_TOKENS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string"),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function saveRepoProviderTokens(tokens: RepoProviderTokenMap) {
+  try {
+    localStorage.setItem(REPO_PROVIDER_TOKENS_KEY, JSON.stringify(tokens));
+  } catch {}
+}
+
+function getRepoProviderTokenKey(repoCommonDir: string, kind: ReviewProviderKind) {
+  return `${repoCommonDir}::${kind}`;
+}
+
+function getEffectiveProviderToken(
+  repo: RepositoryInfo | null | undefined,
+  providerTokens: ProviderTokenMap,
+  repoProviderTokens: RepoProviderTokenMap,
+) {
+  const provider = repo?.provider;
+  if (!provider || !repo?.common_dir) return "";
+
+  const repoOverride = repoProviderTokens[getRepoProviderTokenKey(repo.common_dir, provider.kind)]?.trim();
+  if (repoOverride) return repoOverride;
+  return providerTokens[provider.kind]?.trim() || "";
+}
+
+function getRepoProviderTokenOverride(
+  repo: RepositoryInfo | null | undefined,
+  repoProviderTokens: RepoProviderTokenMap,
+) {
+  const provider = repo?.provider;
+  if (!provider || !repo?.common_dir) return "";
+  return repoProviderTokens[getRepoProviderTokenKey(repo.common_dir, provider.kind)] || "";
+}
+
+function supportsCapability(
+  provider: ReviewProviderInfo | null | undefined,
+  capability: keyof ReviewProviderCapabilities,
+) {
+  return Boolean(provider?.capabilities?.[capability]);
+}
 function loadReviewWindowRepo() {
   try {
     const fromQuery = new URL(window.location.href).searchParams.get("repo");
@@ -304,8 +484,29 @@ function canResetTest(value: string | null | undefined) {
   return ["passed", "pass", "success"].includes(normalizeStatus(value));
 }
 
+function usesApprovalLanguage(provider: ReviewProviderInfo | null | undefined) {
+  return provider?.kind === "github" || provider?.kind === "gitlab";
+}
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+type StatusMessageState =
+  | { kind: "key"; key: string; args?: unknown[] }
+  | { kind: "text"; text: string };
+
+function localizedStatusMessage(key: string, ...args: unknown[]): StatusMessageState {
+  return { kind: "key", key, args };
+}
+
+function resolveStatusMessage(
+  t: (key: any, ...args: any[]) => string,
+  state: StatusMessageState | null | undefined,
+) {
+  if (!state) return "";
+  if (state.kind === "text") return state.text;
+  return t(state.key, ...(state.args ?? []));
 }
 
 function App() {
@@ -323,18 +524,19 @@ function App() {
   const [branch, setBranch] = useState("");
   const [forceRemove, setForceRemove] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [busyLabel, setBusyLabel] = useState("");
-  const [message, setMessage] = useState(t("status.ready"));
+  const [busyLabelState, setBusyLabelState] = useState<StatusMessageState | null>(null);
+  const [messageState, setMessageState] = useState<StatusMessageState>({ kind: "key", key: "status.ready" });
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [pendingRemove, setPendingRemove] = useState<WorktreeInfo | null>(null);
   const [pendingCreateBranch, setPendingCreateBranch] = useState<{ branch: string; path: string } | null>(null);
-  const [giteeToken, setGiteeToken] = useState(loadGiteeToken);
-  const [pullRequests, setPullRequests] = useState<GiteePullRequestInfo[]>([]);
+  const [providerTokens, setProviderTokens] = useState<ProviderTokenMap>(loadProviderTokens);
+  const [repoProviderTokens, setRepoProviderTokens] = useState<RepoProviderTokenMap>(loadRepoProviderTokens);
+  const [pullRequests, setPullRequests] = useState<PullRequestInfo[]>([]);
   const [pullRequestsLoading, setPullRequestsLoading] = useState(false);
   const [pullRequestDetailLoading, setPullRequestDetailLoading] = useState(false);
   const [selectedPullRequestNumber, setSelectedPullRequestNumber] = useState<number | null>(null);
-  const [pullRequestDetail, setPullRequestDetail] = useState<GiteePullRequestInfo | null>(null);
+  const [pullRequestDetail, setPullRequestDetail] = useState<PullRequestInfo | null>(null);
   const [reviewCleanupPreference, setReviewCleanupPreference] = useState<ReviewCleanupPreference>(loadReviewCleanupPreference);
   const [pendingReviewCleanup, setPendingReviewCleanup] = useState<PendingReviewCleanup | null>(null);
   const [rememberReviewCleanupChoice, setRememberReviewCleanupChoice] = useState(false);
@@ -343,7 +545,7 @@ function App() {
   const repositories = result?.repositories ?? [];
   const hiddenRepoSet = useMemo(() => new Set(hiddenRepoIds), [hiddenRepoIds]);
   const reviewRepositories = useMemo(
-    () => repositories.filter((repo) => Boolean(repo.gitee)),
+    () => repositories.filter((repo) => Boolean(repo.provider)),
     [repositories],
   );
   const availableRepositories = isReviewWindow ? reviewRepositories : repositories;
@@ -369,11 +571,28 @@ function App() {
     }
     return pullRequests.find((item) => item.number === selectedPullRequestNumber) ?? null;
   }, [pullRequestDetail, pullRequests, selectedPullRequestNumber]);
+  const activeProvider = activeRepo?.provider ?? null;
+  const activeProviderToken = getEffectiveProviderToken(activeRepo, providerTokens, repoProviderTokens);
+  const activeRepoTokenOverride = getRepoProviderTokenOverride(activeRepo, repoProviderTokens);
   const selectedEditor = editorOptions.find((option) => option.value === editor) ?? editorOptions[0];
   const SelectedEditorIcon = selectedEditor.icon;
+  const busyLabel = resolveStatusMessage(t, busyLabelState);
+  const message = resolveStatusMessage(t, messageState);
   const skipNextEditorPersistRef = useRef(false);
   const branchCacheRef = useRef<Record<string, BranchInfo[]>>({});
   const pullRequestCacheRef = useRef<Record<string, PullRequestCacheEntry>>({});
+
+  function setLocalizedMessage(key: string, ...args: unknown[]) {
+    setMessageState(localizedStatusMessage(key, ...args));
+  }
+
+  function setRawMessage(text: string) {
+    setMessageState({ kind: "text", text });
+  }
+
+  function setLocalizedBusyLabel(key: string, ...args: unknown[]) {
+    setBusyLabelState(localizedStatusMessage(key, ...args));
+  }
 
   function selectText(event: React.FocusEvent<HTMLInputElement> | React.MouseEvent<HTMLInputElement>) {
     event.currentTarget.select();
@@ -395,7 +614,7 @@ function App() {
     }
   }
 
-  function rememberPullRequestItems(repoRoot: string, items: GiteePullRequestInfo[], selectedNumber: number | null) {
+  function rememberPullRequestItems(repoRoot: string, items: PullRequestInfo[], selectedNumber: number | null) {
     const current = pullRequestCacheRef.current[repoRoot];
     pullRequestCacheRef.current[repoRoot] = {
       items,
@@ -414,7 +633,7 @@ function App() {
     };
   }
 
-  function rememberPullRequestDetail(repoRoot: string, detail: GiteePullRequestInfo) {
+  function rememberPullRequestDetail(repoRoot: string, detail: PullRequestInfo) {
     const current = pullRequestCacheRef.current[repoRoot];
     pullRequestCacheRef.current[repoRoot] = {
       items: current?.items ?? [],
@@ -500,8 +719,12 @@ function App() {
   }, [selectedRepo, visibleRepositories]);
 
   useEffect(() => {
-    saveGiteeToken(giteeToken);
-  }, [giteeToken]);
+    saveProviderTokens(providerTokens);
+  }, [providerTokens]);
+
+  useEffect(() => {
+    saveRepoProviderTokens(repoProviderTokens);
+  }, [repoProviderTokens]);
 
   useEffect(() => {
     localStorage.setItem(THEME_KEY, theme);
@@ -523,8 +746,12 @@ function App() {
         setResult(loadCachedResult());
       }
 
-      if (event.key === GITEE_TOKEN_KEY) {
-        setGiteeToken(loadGiteeToken());
+      if (event.key === GITEE_TOKEN_KEY || event.key === PROVIDER_TOKENS_KEY) {
+        setProviderTokens(loadProviderTokens());
+      }
+
+      if (event.key === REPO_PROVIDER_TOKENS_KEY) {
+        setRepoProviderTokens(loadRepoProviderTokens());
       }
 
       if (event.key === HIDDEN_REPO_IDS_KEY) {
@@ -538,7 +765,8 @@ function App() {
 
     const onFocus = () => {
       setResult(loadCachedResult());
-      setGiteeToken(loadGiteeToken());
+      setProviderTokens(loadProviderTokens());
+      setRepoProviderTokens(loadRepoProviderTokens());
       setHiddenRepoIds(loadHiddenRepoIds());
       if (isReviewWindow) {
         setSelectedRepo(loadReviewWindowRepo());
@@ -596,12 +824,12 @@ function App() {
   }, [activeRepo?.root, branchLoadVersion]);
 
   useEffect(() => {
-    if (!activeRepo?.gitee) {
+    if (!activeProvider) {
       clearPullRequestView();
       return;
     }
 
-    if (!giteeToken.trim()) {
+    if (!activeProviderToken.trim()) {
       clearPullRequestView();
       return;
     }
@@ -616,22 +844,26 @@ function App() {
     if (!restored || (cachedPullRequests?.items.length ?? 0) === 0) {
       void loadPullRequests(null, { force: true });
     }
-  }, [activeRepo?.root, activeRepo?.gitee?.owner, activeRepo?.gitee?.repo, giteeToken, isReviewWindow]);
+  }, [activeRepo?.root, activeProvider?.kind, activeProvider?.full_name, activeProviderToken, isReviewWindow]);
 
-  async function runAction<T>(action: () => Promise<T>, success: string, working = t("busy.working")) {
+  async function runAction<T>(
+    action: () => Promise<T>,
+    success: StatusMessageState,
+    working: StatusMessageState = localizedStatusMessage("busy.working"),
+  ) {
     setBusy(true);
-    setBusyLabel(working);
-    setMessage(working);
+    setBusyLabelState(working);
+    setMessageState(working);
     try {
       const value = await action();
-      setMessage(success);
+      setMessageState(success);
       return value;
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setRawMessage(error instanceof Error ? error.message : String(error));
       return null;
     } finally {
       setBusy(false);
-      setBusyLabel("");
+      setBusyLabelState(null);
     }
   }
 
@@ -639,7 +871,7 @@ function App() {
     preferredNumber = selectedPullRequestNumber,
     options?: { force?: boolean },
   ) {
-    if (!activeRepo?.gitee || !giteeToken.trim()) return;
+    if (!activeProvider || !activeProviderToken.trim()) return;
 
     const repoRoot = activeRepo.root;
     if (!options?.force && restorePullRequestCache(repoRoot, preferredNumber)) {
@@ -648,10 +880,10 @@ function App() {
 
     setPullRequestsLoading(true);
     try {
-      const items = await invoke<GiteePullRequestInfo[]>("list_gitee_pull_requests", {
+      const items = await invoke<PullRequestInfo[]>("list_pull_requests", {
         request: {
           repo_path: activeRepo.root,
-          access_token: giteeToken.trim(),
+          access_token: activeProviderToken.trim(),
         },
       });
       setPullRequests(items);
@@ -672,14 +904,14 @@ function App() {
       setPullRequests([]);
       setPullRequestDetail(null);
       setSelectedPullRequestNumber(null);
-      setMessage(getErrorMessage(error));
+      setRawMessage(getErrorMessage(error));
     } finally {
       setPullRequestsLoading(false);
     }
   }
 
   async function loadPullRequestDetail(number: number, options?: { force?: boolean }) {
-    if (!activeRepo?.gitee || !giteeToken.trim()) return null;
+    if (!activeProvider || !activeProviderToken.trim()) return null;
 
     const repoRoot = activeRepo.root;
     const cachedDetail = !options?.force ? pullRequestCacheRef.current[repoRoot]?.details[number] : null;
@@ -691,10 +923,10 @@ function App() {
 
     setPullRequestDetailLoading(true);
     try {
-      const detail = await invoke<GiteePullRequestInfo>("get_gitee_pull_request_detail", {
+      const detail = await invoke<PullRequestInfo>("get_pull_request_detail", {
         request: {
           repo_path: activeRepo.root,
-          access_token: giteeToken.trim(),
+          access_token: activeProviderToken.trim(),
           number,
         },
       });
@@ -703,7 +935,7 @@ function App() {
       return detail;
     } catch (error) {
       setPullRequestDetail(null);
-      setMessage(getErrorMessage(error));
+      setRawMessage(getErrorMessage(error));
       return null;
     } finally {
       setPullRequestDetailLoading(false);
@@ -727,30 +959,30 @@ function App() {
             editor: null,
           },
         }),
-      t("open.opened"),
-      t("open.openingLink"),
+      localizedStatusMessage("open.opened"),
+      localizedStatusMessage("open.openingLink"),
     );
   }
 
   async function approvePullRequest(kind: "review" | "test", number: number, currentStatus?: string | null) {
-    if (!activeRepo?.gitee || !giteeToken.trim()) return;
+    if (!activeProvider || !activeProviderToken.trim()) return;
 
     const resetting = kind === "review" ? canResetReview(currentStatus) : canResetTest(currentStatus);
     const command = kind === "review"
-      ? (resetting ? "reset_gitee_pull_request_review" : "approve_gitee_pull_request_review")
-      : (resetting ? "reset_gitee_pull_request_test" : "approve_gitee_pull_request_test");
+      ? (resetting ? "reset_pull_request_review" : "approve_pull_request_review")
+      : (resetting ? "reset_pull_request_test" : "approve_pull_request_test");
     const success = kind === "review"
-      ? (resetting ? t("gitee.reviewResetDone") : t("gitee.reviewPassed"))
-      : (resetting ? t("gitee.testResetDone") : t("gitee.testPassed"));
+      ? localizedStatusMessage(resetting ? "gitee.reviewResetDone" : "gitee.reviewPassed")
+      : localizedStatusMessage(resetting ? "gitee.testResetDone" : "gitee.testPassed");
     const working = kind === "review"
-      ? (resetting ? t("gitee.reviewResetting") : t("gitee.reviewPassing"))
-      : (resetting ? t("gitee.testResetting") : t("gitee.testPassing"));
+      ? localizedStatusMessage(resetting ? "gitee.reviewResetting" : "gitee.reviewPassing")
+      : localizedStatusMessage(resetting ? "gitee.testResetting" : "gitee.testPassing");
     const finished = await runAction(
       () =>
         invoke<RepositoryInfo>(command, {
           request: {
             repo_path: activeRepo.root,
-            access_token: giteeToken.trim(),
+            access_token: activeProviderToken.trim(),
             number,
           },
         }),
@@ -765,19 +997,19 @@ function App() {
   }
 
   async function cleanupCodeReviewWorktree(number: number) {
-    if (!activeRepo?.gitee || !giteeToken.trim()) return false;
+    if (!activeProvider || !activeProviderToken.trim()) return false;
 
     const updated = await runAction(
       () =>
-        invoke<RepositoryInfo>("cleanup_gitee_code_review_worktree", {
+        invoke<RepositoryInfo>("cleanup_code_review_worktree", {
           request: {
             repo_path: activeRepo.root,
-            access_token: giteeToken.trim(),
+            access_token: activeProviderToken.trim(),
             number,
           },
         }),
-      t("gitee.cleanupDeleted"),
-      t("gitee.cleanupDeleting"),
+      localizedStatusMessage("gitee.cleanupDeleted"),
+      localizedStatusMessage("gitee.cleanupDeleting"),
     );
 
     if (updated) {
@@ -789,21 +1021,31 @@ function App() {
     return false;
   }
 
-  async function completePullRequestReview(pullRequest: GiteePullRequestInfo) {
-    if (!activeRepo?.gitee || !giteeToken.trim()) return;
+  async function completePullRequestReview(pullRequest: PullRequestInfo) {
+    if (!activeProvider || !activeProviderToken.trim()) return;
     if (canResetReview(pullRequest.review_status)) return;
+    if (pullRequest.review_action_allowed === false) {
+      if (pullRequest.review_action_blocked_reason) {
+        setRawMessage(pullRequest.review_action_blocked_reason);
+      } else {
+        setLocalizedMessage("review.approveBlocked");
+      }
+      return;
+    }
+
+    const approvalAction = usesApprovalLanguage(activeProvider);
 
     const updated = await runAction(
       () =>
-        invoke<RepositoryInfo>("approve_gitee_pull_request_review", {
+        invoke<RepositoryInfo>("approve_pull_request_review", {
           request: {
             repo_path: activeRepo.root,
-            access_token: giteeToken.trim(),
+            access_token: activeProviderToken.trim(),
             number: pullRequest.number,
           },
         }),
-      t("gitee.reviewCompleteDone"),
-      t("gitee.reviewCompleteDoing"),
+      localizedStatusMessage(approvalAction ? "gitee.reviewPassed" : "gitee.reviewCompleteDone"),
+      localizedStatusMessage(approvalAction ? "gitee.reviewPassing" : "gitee.reviewCompleteDoing"),
     );
 
     if (!updated) return;
@@ -843,15 +1085,15 @@ function App() {
     }
   }
 
-  async function startCodeReview(pullRequest: GiteePullRequestInfo) {
-    if (!activeRepo?.gitee || !giteeToken.trim()) return;
+  async function startCodeReview(pullRequest: PullRequestInfo) {
+    if (!activeProvider || !activeProviderToken.trim()) return;
 
     const prepared = await runAction(
       async () => {
-        const review = await invoke<CodeReviewResult>("prepare_gitee_code_review", {
+        const review = await invoke<CodeReviewResult>("prepare_code_review", {
           request: {
             repo_path: activeRepo.root,
-            access_token: giteeToken.trim(),
+            access_token: activeProviderToken.trim(),
             number: pullRequest.number,
           },
         });
@@ -873,13 +1115,13 @@ function App() {
 
         return review;
       },
-      t("gitee.codeReviewReady"),
-      t("gitee.codeReviewPreparing"),
+      localizedStatusMessage("gitee.codeReviewReady"),
+      localizedStatusMessage("gitee.codeReviewPreparing"),
     );
   }
 
   async function openReviewWindow() {
-    if (!activeRepo?.gitee) return;
+    if (!activeProvider) return;
 
     saveReviewWindowRepo(activeRepo.common_dir);
 
@@ -896,7 +1138,7 @@ function App() {
 
     const reviewWindow = new WebviewWindow(REVIEW_WINDOW_LABEL, {
       url: url.toString(),
-      title: `${t("gitee.openReviewWindow")} · ${activeRepoName}`,
+      title: `${t("review.windowTitle")} · ${activeRepoName}`,
       width: REVIEW_WINDOW_DEFAULT_WIDTH,
       height: REVIEW_WINDOW_DEFAULT_HEIGHT,
       minWidth: REVIEW_WINDOW_MIN_WIDTH,
@@ -905,19 +1147,23 @@ function App() {
     });
 
     reviewWindow.once("tauri://error", (event) => {
-      setMessage(typeof event.payload === "string" ? event.payload : t("gitee.unavailable"));
+      if (typeof event.payload === "string") {
+        setRawMessage(event.payload);
+      } else {
+        setLocalizedMessage("review.unavailable", activeProvider?.display_name || "Git provider");
+      }
     });
   }
 
   async function scan(root = scanRoot) {
     const value = await runAction(
       () => invoke<ScanResult>("scan_directory", { root }),
-      t("scan.complete"),
-      t("scan.scanning"),
+      localizedStatusMessage("scan.complete"),
+      localizedStatusMessage("scan.scanning"),
     );
     if (value) {
       setResult(value);
-      const nextRepositories = isReviewWindow ? value.repositories.filter((repo) => Boolean(repo.gitee)) : value.repositories;
+      const nextRepositories = isReviewWindow ? value.repositories.filter((repo) => Boolean(repo.provider)) : value.repositories;
       const nextVisibleRepositories = nextRepositories.filter((repo) => !hiddenRepoSet.has(repo.common_dir));
       const nextSelection = showHiddenRepos
         ? nextVisibleRepositories[0]?.common_dir ?? nextRepositories[0]?.common_dir ?? null
@@ -932,8 +1178,8 @@ function App() {
 
     const updated = await runAction(
       () => invoke<RepositoryInfo>("refresh_repository", { repoPath }),
-      t("refresh.complete"),
-      t("refresh.refreshing"),
+      localizedStatusMessage("refresh.complete"),
+      localizedStatusMessage("refresh.refreshing"),
     );
 
     if (updated) {
@@ -989,8 +1235,8 @@ function App() {
             create_branch: createBranch,
           },
         }),
-      t("worktree.added"),
-      createBranch ? t("worktree.creating") : t("worktree.adding"),
+      localizedStatusMessage("worktree.added"),
+      localizedStatusMessage(createBranch ? "worktree.creating" : "worktree.adding"),
     );
     if (updated) {
       invalidateBranchCache(updated.root);
@@ -1003,6 +1249,27 @@ function App() {
 
   async function removeWorktree(path: string) {
     if (!activeRepo) return;
+    const target = activeRepo.worktrees.find((worktree) => worktree.path === path);
+
+    if (!target) {
+      setPendingRemove(null);
+      return;
+    }
+
+    if (!canRemoveWorktree(target)) {
+      setPendingRemove(null);
+      if (!activeRepo) {
+        setLocalizedMessage("card.removeTitle");
+      } else if (activeRepo.worktrees.length <= 1) {
+        setLocalizedMessage("worktree.removeLastBlocked");
+      } else if (isMainWorktree(target)) {
+        setLocalizedMessage("worktree.removeMainBlocked");
+      } else {
+        setLocalizedMessage("card.removeTitle");
+      }
+      return;
+    }
+
     const updated = await runAction(
       () =>
         invoke<RepositoryInfo>("remove_worktree", {
@@ -1012,8 +1279,8 @@ function App() {
             force: forceRemove,
           },
         }),
-      t("worktree.removed"),
-      t("worktree.removing"),
+      localizedStatusMessage("worktree.removed"),
+      localizedStatusMessage("worktree.removing"),
     );
     if (updated) {
       invalidateBranchCache(updated.root);
@@ -1026,8 +1293,8 @@ function App() {
     if (!activeRepo) return;
     const updated = await runAction(
       () => invoke<RepositoryInfo>("prune_worktrees", { repoPath: activeRepo.root }),
-      t("prune.complete"),
-      t("prune.pruning"),
+      localizedStatusMessage("prune.complete"),
+      localizedStatusMessage("prune.pruning"),
     );
     if (updated) {
       invalidateBranchCache(updated.root);
@@ -1045,8 +1312,8 @@ function App() {
             custom_command: null,
           },
         }),
-      t("open.opened"),
-      t("open.opening"),
+      localizedStatusMessage("open.opened"),
+      localizedStatusMessage("open.opening"),
     );
   }
 
@@ -1060,18 +1327,19 @@ function App() {
             custom_command: null,
           },
         }),
-      t("open.opened"),
-      t("open.opening"),
+      localizedStatusMessage("open.opened"),
+      localizedStatusMessage("open.opening"),
     );
   }
 
   function replaceRepo(updated: RepositoryInfo) {
     setResult((previous) => {
       if (!previous) return previous;
+      const normalized = normalizeRepositoryInfo(updated);
       const next = {
         ...previous,
         repositories: previous.repositories.map((repo) =>
-          repo.common_dir === updated.common_dir ? updated : repo,
+          repo.common_dir === normalized.common_dir ? normalized : repo,
         ),
       };
       saveCachedResult(next);
@@ -1080,11 +1348,60 @@ function App() {
     setSelectedRepo(updated.common_dir);
   }
 
+  function updateActiveProviderGlobalToken(token: string) {
+    if (!activeProvider) return;
+    setProviderTokens((current) => ({
+      ...current,
+      [activeProvider.kind]: token,
+    }));
+  }
+
+  function updateActiveRepoTokenOverride(token: string) {
+    if (!activeProvider || !activeRepo?.common_dir) return;
+    const tokenKey = getRepoProviderTokenKey(activeRepo.common_dir, activeProvider.kind);
+    setRepoProviderTokens((current) => {
+      if (!token.trim()) {
+        const next = { ...current };
+        delete next[tokenKey];
+        return next;
+      }
+
+      return {
+        ...current,
+        [tokenKey]: token,
+      };
+    });
+  }
+
   const activeRepoName = activeRepo ? activeRepo.name || basename(activeRepo.root) : t("toolbar.noRepo");
   const prunableCount = activeRepo?.worktrees.filter((worktree) => Boolean(worktree.prunable)).length ?? 0;
+  function isMainWorktree(worktree: WorktreeInfo) {
+    return Boolean(activeRepo) && worktree.path === activeRepo.root;
+  }
+
+  function canRemoveWorktree(worktree: WorktreeInfo) {
+    return Boolean(activeRepo) && activeRepo.worktrees.length > 1 && !isMainWorktree(worktree);
+  }
+
+  function getRemoveWorktreeDisabledReason(worktree: WorktreeInfo) {
+    if (!activeRepo) {
+      return t("card.removeTitle");
+    }
+
+    if (activeRepo.worktrees.length <= 1) {
+      return t("worktree.removeLastBlocked");
+    }
+
+    if (isMainWorktree(worktree)) {
+      return t("worktree.removeMainBlocked");
+    }
+
+    return t("card.removeTitle");
+  }
+
   const hasCachedPullRequests = activeRepo ? Boolean(pullRequestCacheRef.current[activeRepo.root]) : false;
-  const reviewQueueCount = activeRepo?.gitee
-    ? (giteeToken.trim() ? (hasCachedPullRequests ? String(pullRequests.length) : "--") : "--")
+  const reviewQueueCount = activeProvider
+    ? (activeProviderToken.trim() ? (hasCachedPullRequests ? String(pullRequests.length) : "--") : "--")
     : "0";
   const cleanupPreferenceLabel = reviewCleanupPreference === "delete"
     ? t("settings.cleanupDelete")
@@ -1096,9 +1413,12 @@ function App() {
     { value: "dark", label: t("theme.dark"), icon: Moon },
     { value: "system", label: t("theme.system"), icon: Monitor },
   ];
-  const reviewRepoSummary = activeRepo?.gitee
-    ? `${activeRepo.gitee.owner}/${activeRepo.gitee.repo}`
-    : activeRepo?.root ?? t("gitee.noRepo");
+  const activeProviderName = activeProvider?.display_name || t("review.providerFallback");
+  const reviewRepoSummary = activeProvider?.full_name || activeRepo?.root || t("review.noRepo");
+  const statusContext = isReviewWindow ? reviewRepoSummary : activeRepoName;
+  const statusTask = busyLabel && busyLabel !== message ? busyLabel : "";
+  const showReviewStatus = supportsCapability(activeProvider, "approve_review") || pullRequests.some((item) => Boolean(item.review_status));
+  const showTestStatus = supportsCapability(activeProvider, "approve_test") || pullRequests.some((item) => Boolean(item.test_status));
 
   return (
     <main className="desktopShell">
@@ -1117,7 +1437,7 @@ function App() {
 
           {isReviewWindow ? (
             <div className="windowSummary">
-              <span className="eyebrow">{t("gitee.openReviewWindow")}</span>
+              <span className="eyebrow">{t("review.windowTitle")}</span>
               <strong>{reviewRepoSummary}</strong>
             </div>
           ) : (
@@ -1148,7 +1468,34 @@ function App() {
           <div className="titleBarUtilities">
             <div className={`statusBanner ${busy ? "busy" : ""}`} title={message}>
               {busy ? <Loader2 className="spin" size={16} /> : <Check size={16} />}
-              <span>{message}</span>
+              <span className="statusBannerText">{message}</span>
+              <button
+                type="button"
+                className="statusBannerInfo"
+                aria-label={t("toolbar.statusInfo")}
+                title={t("toolbar.statusInfo")}
+              >
+                <Info size={14} />
+              </button>
+              <div className="statusBannerPopover" role="tooltip">
+                <span className="eyebrow">{t("toolbar.statusInfo")}</span>
+                <div className="statusDetailList">
+                  <div className="statusDetailRow">
+                    <span>{t("toolbar.statusMessage")}</span>
+                    <strong>{message}</strong>
+                  </div>
+                  <div className="statusDetailRow">
+                    <span>{t("toolbar.currentRepo")}</span>
+                    <strong>{statusContext}</strong>
+                  </div>
+                  {statusTask ? (
+                    <div className="statusDetailRow">
+                      <span>{t("toolbar.statusTask")}</span>
+                      <strong>{statusTask}</strong>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
             </div>
 
             <div className="themeButtons compactThemeButtons">
@@ -1188,7 +1535,7 @@ function App() {
             {isReviewWindow ? (
               <div className="sidebarPathCard">
                 <span>{t("nav.reviews")}</span>
-                <strong>{t("gitee.listTitle")}</strong>
+                <strong>{t("review.listTitle")}</strong>
               </div>
             ) : (
               <div className="sidebarPathCard">
@@ -1211,7 +1558,7 @@ function App() {
 
           <div className="sidebarSection sidebarRepoSection">
             {visibleRepositories.length === 0 ? (
-              <div className="emptyStrip">{allDisplayedReposHidden ? t("sidebar.allHidden") : isReviewWindow ? t("gitee.noRepo") : t("sidebar.noRepos")}</div>
+              <div className="emptyStrip">{allDisplayedReposHidden ? t("sidebar.allHidden") : isReviewWindow ? t("review.noRepo") : t("sidebar.noRepos")}</div>
             ) : (
               <div className="sidebarRepoList">
                 {visibleRepositories.map((repo) => {
@@ -1239,7 +1586,7 @@ function App() {
                           <div className="sidebarRepoMeta">
                             <em>{t("sidebar.worktrees", repo.worktrees.length)}</em>
                             {repoPrunable > 0 && <em>{t("dashboard.prunable")}: {repoPrunable}</em>}
-                            {repo.gitee && <span className="miniBadge">Gitee</span>}
+                            {repo.provider && <span className="miniBadge">{repo.provider.display_name}</span>}
                             {isHidden && <span className="miniBadge hiddenBadge">{t("badge.hidden")}</span>}
                           </div>
                         </div>
@@ -1282,19 +1629,19 @@ function App() {
                         </button>
                         <button
                           className="headerActionButton"
-                          onClick={() => void openExternalUrl(activeRepo.gitee?.web_url || activeRepo.root)}
-                          disabled={busy || !activeRepo.gitee}
+                          onClick={() => void openExternalUrl(activeProvider?.web_url || activeRepo.root)}
+                          disabled={busy || !activeProvider}
                         >
                           <ExternalLink size={16} />
-                          {t("gitee.openRepo")}
+                          {t("review.openRepo")}
                         </button>
                         <button
                           className="headerActionButton emphasis"
                           onClick={() => void loadPullRequests(selectedPullRequestNumber, { force: true })}
-                          disabled={busy || pullRequestsLoading || !giteeToken.trim()}
+                          disabled={busy || pullRequestsLoading || !activeProviderToken.trim()}
                         >
                           {pullRequestsLoading ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
-                          {t("gitee.refreshList")}
+                          {t("review.refreshList")}
                         </button>
                       </div>
                     </div>
@@ -1302,16 +1649,26 @@ function App() {
 
                   <div className="reviewControlBar">
                     <label className="field reviewTokenField">
-                      <span>{t("gitee.apiKey")}</span>
+                      <span>{t("review.globalToken", activeProviderName)}</span>
                       <input
                         type="password"
-                        value={giteeToken}
-                        placeholder={t("gitee.apiKeyPlaceholder")}
+                        value={activeProvider ? providerTokens[activeProvider.kind] || "" : ""}
+                        placeholder={t("review.globalTokenPlaceholder", activeProviderName)}
                         autoComplete="off"
-                        onChange={(event) => setGiteeToken(event.target.value)}
+                        onChange={(event) => updateActiveProviderGlobalToken(event.target.value)}
                       />
                     </label>
-                    <div className="reviewControlHint hint">{t("gitee.tokenHint")}</div>
+                    <label className="field reviewTokenField">
+                      <span>{t("review.repoToken", activeProviderName)}</span>
+                      <input
+                        type="password"
+                        value={activeRepoTokenOverride}
+                        placeholder={t("review.repoTokenPlaceholder", activeProviderName)}
+                        autoComplete="off"
+                        onChange={(event) => updateActiveRepoTokenOverride(event.target.value)}
+                      />
+                    </label>
+                    <div className="reviewControlHint hint">{t("review.tokenHint", activeProviderName)}</div>
                   </div>
 
                   <div className="metricStrip">
@@ -1325,19 +1682,19 @@ function App() {
                 <section className="sectionPanel panelSurface reviewWindowPanel">
                   <div className="panelHeaderRow">
                     <div>
-                      <h3>{t("gitee.listTitle")}</h3>
-                      <p>{t("gitee.listHint")}</p>
+                      <h3>{t("review.listTitle")}</h3>
+                      <p>{t("review.listHint")}</p>
                     </div>
                   </div>
 
-                  {!activeRepo.gitee ? (
-                    <div className="empty subtleEmpty">{t("gitee.unavailable")}</div>
-                  ) : !giteeToken.trim() ? (
-                    <div className="empty subtleEmpty">{t("empty.reviewAuth")}</div>
+                  {!activeProvider ? (
+                    <div className="empty subtleEmpty">{t("review.unavailable", activeProviderName)}</div>
+                  ) : !activeProviderToken.trim() ? (
+                    <div className="empty subtleEmpty">{t("review.authRequired", activeProviderName)}</div>
                   ) : pullRequestsLoading ? (
-                    <div className="empty subtleEmpty">{t("gitee.loadingList")}</div>
+                    <div className="empty subtleEmpty">{t("review.loadingList")}</div>
                   ) : pullRequests.length === 0 ? (
-                    <div className="empty subtleEmpty">{t("gitee.listEmpty")}</div>
+                    <div className="empty subtleEmpty">{t("review.listEmpty")}</div>
                   ) : (
                     <div className="reviewWorkspace">
                       <div className="reviewQueue">
@@ -1367,12 +1724,16 @@ function App() {
                                 </span>
                                 <span>{formatDate(item.updated_at || item.created_at, locale)}</span>
                                 <div className="pullRequestStatusRow">
-                                  <span className={`statusPill subtle ${reviewDone ? "success" : ""}`}>
-                                    {t("gitee.reviewStatus")}: {humanizeStatus(item.review_status) || t("gitee.unknown")}
-                                  </span>
-                                  <span className={`statusPill subtle ${testDone ? "success" : ""}`}>
-                                    {t("gitee.testStatus")}: {humanizeStatus(item.test_status) || t("gitee.unknown")}
-                                  </span>
+                                  {showReviewStatus && (
+                                    <span className={`statusPill subtle ${reviewDone ? "success" : ""}`}>
+                                      {t("gitee.reviewStatus")}: {humanizeStatus(item.review_status) || t("review.unknown")}
+                                    </span>
+                                  )}
+                                  {showTestStatus && (
+                                    <span className={`statusPill subtle ${testDone ? "success" : ""}`}>
+                                      {t("gitee.testStatus")}: {humanizeStatus(item.test_status) || t("review.unknown")}
+                                    </span>
+                                  )}
                                 </div>
                               </button>
                             </article>
@@ -1382,7 +1743,7 @@ function App() {
 
                       <div className="reviewDetailSurface">
                         {pullRequestDetailLoading ? (
-                          <div className="empty subtleEmpty">{t("gitee.loadingDetail")}</div>
+                          <div className="empty subtleEmpty">{t("review.loadingDetail")}</div>
                         ) : activePullRequest ? (
                           <div className="pullRequestDetail">
                             <div className="detailTitleRow detailHeroRow">
@@ -1399,29 +1760,42 @@ function App() {
                             <div className="detailActionGrid">
                               <button className="reviewActionButton" onClick={() => void openExternalUrl(activePullRequest.web_url)} disabled={busy}>
                                 <ExternalLink size={16} />
-                                {t("gitee.openWeb")}
+                                {t("review.openWeb")}
                               </button>
-                              <button className="reviewActionButton" onClick={() => void startCodeReview(activePullRequest)} disabled={busy}>
-                                <Code2 size={16} />
-                                {t("gitee.codeReview")}
-                              </button>
-                              <button
-                                className="reviewActionButton primaryTone"
-                                onClick={() => void completePullRequestReview(activePullRequest)}
-                                disabled={busy || canResetReview(activePullRequest.review_status)}
-                              >
-                                <Check size={16} />
-                                {canResetReview(activePullRequest.review_status) ? t("gitee.reviewDone") : t("gitee.reviewComplete")}
-                              </button>
-                              <button
-                                className="reviewActionButton destructiveTone"
-                                onClick={() => void cleanupCodeReviewWorktree(activePullRequest.number)}
-                                disabled={busy}
-                              >
-                                <Trash2 size={16} />
-                                {t("gitee.cleanupDelete")}
-                              </button>
-                              {!canResetTest(activePullRequest.test_status) && (
+                              {supportsCapability(activeProvider, "code_review") && (
+                                <button className="reviewActionButton" onClick={() => void startCodeReview(activePullRequest)} disabled={busy}>
+                                  <Code2 size={16} />
+                                  {t("gitee.codeReview")}
+                                </button>
+                              )}
+                              {supportsCapability(activeProvider, "approve_review") && (
+                                <button
+                                  className="reviewActionButton primaryTone"
+                                  onClick={() => void completePullRequestReview(activePullRequest)}
+                                  disabled={busy || canResetReview(activePullRequest.review_status) || activePullRequest.review_action_allowed === false}
+                                  title={activePullRequest.review_action_allowed === false
+                                    ? (activePullRequest.review_action_blocked_reason || t("review.approveBlocked"))
+                                    : undefined}
+                                >
+                                  <Check size={16} />
+                                  {canResetReview(activePullRequest.review_status)
+                                    ? t("gitee.reviewDone")
+                                    : usesApprovalLanguage(activeProvider)
+                                      ? t("gitee.reviewPass")
+                                      : t("gitee.reviewComplete")}
+                                </button>
+                              )}
+                              {supportsCapability(activeProvider, "cleanup_worktree") && (
+                                <button
+                                  className="reviewActionButton destructiveTone"
+                                  onClick={() => void cleanupCodeReviewWorktree(activePullRequest.number)}
+                                  disabled={busy}
+                                >
+                                  <Trash2 size={16} />
+                                  {t("gitee.cleanupDelete")}
+                                </button>
+                              )}
+                              {supportsCapability(activeProvider, "approve_test") && !canResetTest(activePullRequest.test_status) && (
                                 <button
                                   className="reviewActionButton successTone"
                                   onClick={() => void approvePullRequest("test", activePullRequest.number, activePullRequest.test_status)}
@@ -1431,7 +1805,7 @@ function App() {
                                   {t("gitee.testPass")}
                                 </button>
                               )}
-                              {canResetReview(activePullRequest.review_status) && (
+                              {supportsCapability(activeProvider, "reset_review") && canResetReview(activePullRequest.review_status) && (
                                 <button
                                   className="reviewActionButton subtleTone"
                                   onClick={() => void approvePullRequest("review", activePullRequest.number, activePullRequest.review_status)}
@@ -1441,7 +1815,7 @@ function App() {
                                   {t("gitee.reviewReset")}
                                 </button>
                               )}
-                              {canResetTest(activePullRequest.test_status) && (
+                              {supportsCapability(activeProvider, "reset_test") && canResetTest(activePullRequest.test_status) && (
                                 <button
                                   className="reviewActionButton subtleTone"
                                   onClick={() => void approvePullRequest("test", activePullRequest.number, activePullRequest.test_status)}
@@ -1457,12 +1831,16 @@ function App() {
                               <span className="statusPill emphasis">
                                 {humanizeStatus(activePullRequest.state) || t("gitee.openFallback")}
                               </span>
-                              <span className={`statusPill subtle ${canResetReview(activePullRequest.review_status) ? "success" : ""}`}>
-                                {t("gitee.reviewStatus")}: {humanizeStatus(activePullRequest.review_status) || t("gitee.unknown")}
-                              </span>
-                              <span className={`statusPill subtle ${canResetTest(activePullRequest.test_status) ? "success" : ""}`}>
-                                {t("gitee.testStatus")}: {humanizeStatus(activePullRequest.test_status) || t("gitee.unknown")}
-                              </span>
+                              {showReviewStatus && (
+                                <span className={`statusPill subtle ${canResetReview(activePullRequest.review_status) ? "success" : ""}`}>
+                                  {t("gitee.reviewStatus")}: {humanizeStatus(activePullRequest.review_status) || t("review.unknown")}
+                                </span>
+                              )}
+                              {showTestStatus && (
+                                <span className={`statusPill subtle ${canResetTest(activePullRequest.test_status) ? "success" : ""}`}>
+                                  {t("gitee.testStatus")}: {humanizeStatus(activePullRequest.test_status) || t("review.unknown")}
+                                </span>
+                              )}
                             </div>
 
                             <div className="detailGrid">
@@ -1502,7 +1880,7 @@ function App() {
                             </div>
                           </div>
                         ) : (
-                          <div className="empty subtleEmpty">{t("gitee.selectHint")}</div>
+                          <div className="empty subtleEmpty">{t("review.selectHint")}</div>
                         )}
                       </div>
                     </div>
@@ -1520,7 +1898,7 @@ function App() {
                     </div>
 
                     <div className="heroBadges">
-                      {activeRepo.gitee && <span className="heroBadge neutral">Gitee</span>}
+                      {activeProvider && <span className="heroBadge neutral">{activeProvider.display_name}</span>}
                       <span className="heroBadge">{activeRepo.current_branch || t("card.detached")}</span>
                     </div>
                   </div>
@@ -1620,6 +1998,8 @@ function App() {
                             : worktree.detached
                               ? t("badge.detached")
                               : t("badge.ready");
+                          const canRemove = canRemoveWorktree(worktree);
+                          const removeTitle = canRemove ? t("card.removeTitle") : getRemoveWorktreeDisabledReason(worktree);
 
                           return (
                             <article key={worktree.path} className="worktreeRow">
@@ -1666,8 +2046,8 @@ function App() {
                                 <button
                                   className="danger"
                                   onClick={() => setPendingRemove(worktree)}
-                                  disabled={busy}
-                                  title={t("card.removeTitle")}
+                                  disabled={busy || !canRemove}
+                                  title={removeTitle}
                                 >
                                   <Trash2 size={16} />
                                   {t("card.remove")}
@@ -1716,13 +2096,13 @@ function App() {
                         </label>
                       </div>
 
-                      {activeRepo.gitee ? (
+                      {activeProvider ? (
                         <button onClick={() => void openReviewWindow()} disabled={busy}>
                           <Code2 size={16} />
-                          {t("gitee.openReviewWindow")}
+                          {t("review.windowTitle")}
                         </button>
                       ) : (
-                        <div className="empty subtleEmpty">{t("gitee.unavailable")}</div>
+                        <div className="empty subtleEmpty">{t("review.unavailable", activeProviderName)}</div>
                       )}
                       <div className="stackedButtons">
                         <button onClick={() => void refreshRepo()} disabled={busy}>
@@ -1738,7 +2118,7 @@ function App() {
           ) : (
             <div className="emptyState panelSurface">
               <GitBranch size={40} />
-              <h2>{allDisplayedReposHidden ? t("empty.hiddenReposTitle") : isReviewWindow ? t("gitee.noRepo") : t("empty.title")}</h2>
+              <h2>{allDisplayedReposHidden ? t("empty.hiddenReposTitle") : isReviewWindow ? t("review.noRepo") : t("empty.title")}</h2>
               {allDisplayedReposHidden && (
                 <>
                   <p>{t("empty.hiddenReposHint")}</p>

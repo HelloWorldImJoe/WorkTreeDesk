@@ -10,15 +10,27 @@ permissions:
 
 jobs:
   publish-tauri:
-    name: Build and Publish macOS Bundles
+    name: Build and Publish ${{ matrix.name }} Bundles
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
+          - name: Linux AppImage
+            platform: ubuntu-22.04
+            rustTarget: ""
+            args: ""
+          - name: Windows NSIS
+            platform: windows-latest
+            rustTarget: ""
+            args: ""
+          - name: macOS Apple Silicon
+            platform: macos-latest
+            rustTarget: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
-          - platform: macos-latest
+          - name: macOS Intel
+            platform: macos-latest
+            rustTarget: x86_64-apple-darwin
             args: --target x86_64-apple-darwin
 
     steps:
@@ -32,13 +44,21 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Add Rust target
+        if: ${{ matrix.rustTarget != '' }}
+        run: rustup target add ${{ matrix.rustTarget }}
 
       - name: Cache Rust build outputs
         uses: swatinem/rust-cache@v2
         with:
           workspaces: ./src-tauri -> target
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Install frontend dependencies
         run: npm install
