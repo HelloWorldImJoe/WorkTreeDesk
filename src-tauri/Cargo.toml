@@ -1,6 +1,6 @@
 [package]
 name = "worktree-desk"
-version = "0.1.0"
+version = "0.1.1"
 description = "A macOS desktop wrapper for Git worktree workflows."
 authors = ["Codex"]
 edition = "2021"
