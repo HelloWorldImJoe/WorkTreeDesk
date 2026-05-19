@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Main window permissions","local":true,"windows":["main","reviews"],"permissions":["core:default","core:webview:allow-create-webview-window","core:window:allow-create","core:window:allow-show","core:window:allow-set-focus","dialog:default","dialog:allow-open"]}}
