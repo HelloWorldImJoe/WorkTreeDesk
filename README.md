@@ -46,6 +46,15 @@ npm run tauri:build
 
 仓库已添加基于 Git tag 的自动发布工作流，配置见 `.github/workflows/release.yml`。
 
+当前发布工作流同时承担 Tauri updater 的更新源职责：
+
+- Release 会上传普通安装产物
+- Release 会额外上传 `latest.json`
+- 构建阶段会生成 updater 对应用的签名文件
+
+应用启动后会自动检查更新；如果发现新版本，会对同一版本只提示一次。
+另外在 macOS 原生应用菜单中提供了“检查更新”，可随时主动触发检查并直接下载、安装、重启。
+
 触发方式：
 
 ```bash
@@ -59,6 +68,13 @@ git push origin v0.1.0
 - macOS app bundle
 - Windows NSIS 安装包
 - Linux AppImage
+
+如果要让自动更新真正可用，还需要在仓库 Secrets 中配置以下值：
+
+- `TAURI_SIGNING_PRIVATE_KEY`: Tauri updater 私钥内容
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: 生成私钥时设置的口令；如果没有设置口令，可留空 Secret 或删除工作流中的该 Secret 引用后再按需调整
+
+注意：公钥已经写入应用配置，可以安全地随代码分发；私钥绝不能提交到仓库。
 
 ---
 

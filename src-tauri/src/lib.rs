@@ -8,7 +8,16 @@ use std::{
     process::Command,
     time::Duration,
 };
+use tauri::{
+    menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder},
+    Emitter, Manager,
+};
 use walkdir::{DirEntry, WalkDir};
+
+const UPDATE_MENU_ID: &str = "app.check-for-updates";
+const UPDATE_MENU_EVENT: &str = "app://check-for-updates";
+const UPDATE_REPOSITORY_OWNER: &str = "HelloWorldImJoe";
+const UPDATE_REPOSITORY_NAME: &str = "WorkTreeDesk";
 
 #[derive(Debug, Serialize)]
 struct WorktreeInfo {
@@ -186,6 +195,28 @@ struct GiteeCodeReviewRequest {
     number: i64,
 }
 
+#[derive(Debug, Serialize)]
+struct ReleaseCheckResult {
+    current_version: String,
+    latest_version: String,
+    has_update: bool,
+    release_name: Option<String>,
+    release_notes: Option<String>,
+    published_at: Option<String>,
+    release_page_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubReleaseResponse {
+    html_url: String,
+    tag_name: String,
+    name: Option<String>,
+    body: Option<String>,
+    draft: bool,
+    prerelease: bool,
+    published_at: Option<String>,
+}
+
 #[tauri::command]
 fn scan_directory(root: String) -> Result<ScanResult, String> {
     let root_path = expand_home(&root)?;
@@ -355,6 +386,90 @@ fn open_url(request: OpenUrlRequest) -> Result<(), String> {
         Some("vscode") => open_url_in_vscode(&url),
         _ => open_external_url(&url),
     }
+}
+
+#[tauri::command]
+fn check_for_app_update(app: tauri::AppHandle) -> Result<ReleaseCheckResult, String> {
+    let current_version = normalize_release_version(&app.package_info().version.to_string());
+    let release = fetch_latest_github_release()?;
+    let latest_version = normalize_release_version(&release.tag_name);
+    let has_update = compare_versions(&latest_version, &current_version)
+        .map(|ordering| ordering.is_gt())
+        .unwrap_or_else(|| latest_version != current_version);
+
+    Ok(ReleaseCheckResult {
+        current_version,
+        latest_version,
+        has_update,
+        release_name: release.name,
+        release_notes: release.body,
+        published_at: release.published_at,
+        release_page_url: release.html_url,
+    })
+}
+
+fn fetch_latest_github_release() -> Result<GithubReleaseResponse, String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(12))
+        .build()
+        .map_err(|error| format!("Failed to create update client: {error}"))?;
+
+    let response = client
+        .get(format!(
+            "https://api.github.com/repos/{}/{}/releases/latest",
+            UPDATE_REPOSITORY_OWNER, UPDATE_REPOSITORY_NAME
+        ))
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .header(reqwest::header::USER_AGENT, "WorktreeDesk-Updater")
+        .send()
+        .map_err(|error| format!("Failed to reach GitHub Releases: {error}"))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("GitHub Releases returned HTTP {status}"));
+    }
+
+    let release: GithubReleaseResponse = response
+        .json()
+        .map_err(|error| format!("Failed to parse GitHub release response: {error}"))?;
+
+    if release.draft {
+        return Err("Latest GitHub release is still a draft".into());
+    }
+
+    if release.prerelease {
+        return Err("Latest GitHub release is a prerelease".into());
+    }
+
+    Ok(release)
+}
+
+fn normalize_release_version(value: &str) -> String {
+    value.trim().trim_start_matches('v').to_string()
+}
+
+fn compare_versions(left: &str, right: &str) -> Option<std::cmp::Ordering> {
+    let left_parts = parse_version_parts(left)?;
+    let right_parts = parse_version_parts(right)?;
+    let max_len = left_parts.len().max(right_parts.len());
+
+    for index in 0..max_len {
+        let left_part = *left_parts.get(index).unwrap_or(&0);
+        let right_part = *right_parts.get(index).unwrap_or(&0);
+        match left_part.cmp(&right_part) {
+            std::cmp::Ordering::Equal => continue,
+            ordering => return Some(ordering),
+        }
+    }
+
+    Some(std::cmp::Ordering::Equal)
+}
+
+fn parse_version_parts(value: &str) -> Option<Vec<u64>> {
+    value
+        .split('.')
+        .map(|segment| segment.parse::<u64>().ok())
+        .collect()
 }
 
 #[tauri::command]
@@ -1415,6 +1530,47 @@ fn gitlab_post(
     parse_json_response_with_label("GitLab", response)
 }
 
+fn build_app_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    let about_item = PredefinedMenuItem::about(app, None, None)?;
+    let services_item = PredefinedMenuItem::services(app, None)?;
+    let hide_item = PredefinedMenuItem::hide(app, None)?;
+    let hide_others_item = PredefinedMenuItem::hide_others(app, None)?;
+    let show_all_item = PredefinedMenuItem::show_all(app, None)?;
+    let quit_item = PredefinedMenuItem::quit(app, None)?;
+    let cut_item = PredefinedMenuItem::cut(app, None)?;
+    let copy_item = PredefinedMenuItem::copy(app, None)?;
+    let paste_item = PredefinedMenuItem::paste(app, None)?;
+    let select_all_item = PredefinedMenuItem::select_all(app, None)?;
+    let update_item = MenuItemBuilder::with_id(UPDATE_MENU_ID, "检查更新").build(app)?;
+
+    let app_submenu = SubmenuBuilder::new(app, "Worktree Desk")
+        .item(&about_item)
+        .separator()
+        .item(&update_item)
+        .separator()
+        .item(&services_item)
+        .separator()
+        .item(&hide_item)
+        .item(&hide_others_item)
+        .item(&show_all_item)
+        .separator()
+        .item(&quit_item)
+        .build()?;
+
+    let edit_submenu = SubmenuBuilder::new(app, "编辑")
+        .item(&cut_item)
+        .item(&copy_item)
+        .item(&paste_item)
+        .separator()
+        .item(&select_all_item)
+        .build()?;
+
+    MenuBuilder::new(app)
+        .item(&app_submenu)
+        .item(&edit_submenu)
+        .build()
+}
+
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -1441,9 +1597,26 @@ pub fn run() {
             reset_gitee_pull_request_review,
             reset_gitee_pull_request_test,
             prepare_gitee_code_review,
-            cleanup_gitee_code_review_worktree
+            cleanup_gitee_code_review_worktree,
+            check_for_app_update
         ])
+        .setup(|app| {
+            let menu = build_app_menu(app.handle())?;
+            app.set_menu(menu)?;
+            Ok(())
+        })
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == UPDATE_MENU_ID {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                    let _ = window.emit(UPDATE_MENU_EVENT, true);
+                }
+            }
+        })
         .plugin(tauri_plugin_dialog::init())
+            .plugin(tauri_plugin_process::init())
+            .plugin(tauri_plugin_updater::Builder::new().build())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

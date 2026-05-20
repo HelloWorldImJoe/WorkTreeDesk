@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { getVersion } from "@tauri-apps/api/app";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updater";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   AlertTriangle,
@@ -153,12 +157,22 @@ const REVIEW_WINDOW_DEFAULT_WIDTH = 1365;
 const REVIEW_WINDOW_DEFAULT_HEIGHT = 1152;
 const REVIEW_WINDOW_MIN_WIDTH = 1240;
 const REVIEW_WINDOW_MIN_HEIGHT = 820;
+const UPDATE_PROMPTED_VERSION_KEY = "worktree-desk.promptedUpdateVersion";
+const UPDATE_MENU_EVENT = "app://check-for-updates";
 
 type ReviewCleanupPreference = "ask" | "delete" | "keep";
 
 type PendingReviewCleanup = {
   number: number;
   title: string;
+};
+
+type PendingUpdate = {
+  version: string;
+  currentVersion: string;
+  body?: string | null;
+  date?: string | null;
+  source: "auto" | "manual";
 };
 
 function loadEditorMap(): Record<string, string> {
@@ -415,6 +429,24 @@ function saveReviewCleanupPreference(preference: ReviewCleanupPreference) {
   } catch {}
 }
 
+function loadPromptedUpdateVersion() {
+  try {
+    return localStorage.getItem(UPDATE_PROMPTED_VERSION_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function savePromptedUpdateVersion(version: string) {
+  try {
+    if (version) {
+      localStorage.setItem(UPDATE_PROMPTED_VERSION_KEY, version);
+    } else {
+      localStorage.removeItem(UPDATE_PROMPTED_VERSION_KEY);
+    }
+  } catch {}
+}
+
 function getRepoEditor(repoCommonDir: string | null | undefined, fallback = "vscode"): string {
   if (!repoCommonDir) return fallback;
   return loadEditorMap()[repoCommonDir] ?? fallback;
@@ -509,6 +541,21 @@ function resolveStatusMessage(
   return t(state.key, ...(state.args ?? []));
 }
 
+function formatByteSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+
+  const units = ["B", "KB", "MB", "GB"];
+  let size = bytes;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${size >= 10 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unitIndex]}`;
+}
+
 function App() {
   const { t, locale, setLocale } = useLocale();
   const appView = getAppView();
@@ -541,6 +588,7 @@ function App() {
   const [pendingReviewCleanup, setPendingReviewCleanup] = useState<PendingReviewCleanup | null>(null);
   const [rememberReviewCleanupChoice, setRememberReviewCleanupChoice] = useState(false);
   const [branchLoadVersion, setBranchLoadVersion] = useState(0);
+  const [pendingUpdate, setPendingUpdate] = useState<PendingUpdate | null>(null);
 
   const repositories = result?.repositories ?? [];
   const hiddenRepoSet = useMemo(() => new Set(hiddenRepoIds), [hiddenRepoIds]);
@@ -581,6 +629,10 @@ function App() {
   const skipNextEditorPersistRef = useRef(false);
   const branchCacheRef = useRef<Record<string, BranchInfo[]>>({});
   const pullRequestCacheRef = useRef<Record<string, PullRequestCacheEntry>>({});
+  const promptedUpdateVersionRef = useRef(loadPromptedUpdateVersion());
+  const updateCheckInFlightRef = useRef(false);
+  const currentAppVersionRef = useRef("");
+  const pendingUpdaterRef = useRef<Update | null>(null);
 
   function setLocalizedMessage(key: string, ...args: unknown[]) {
     setMessageState(localizedStatusMessage(key, ...args));
@@ -592,6 +644,27 @@ function App() {
 
   function setLocalizedBusyLabel(key: string, ...args: unknown[]) {
     setBusyLabelState(localizedStatusMessage(key, ...args));
+  }
+
+  function rememberPromptedUpdateVersion(version: string) {
+    promptedUpdateVersionRef.current = version;
+    savePromptedUpdateVersion(version);
+  }
+
+  async function disposePendingUpdater() {
+    const current = pendingUpdaterRef.current;
+    pendingUpdaterRef.current = null;
+
+    if (!current) return;
+
+    try {
+      await current.close();
+    } catch {}
+  }
+
+  async function dismissPendingUpdate() {
+    setPendingUpdate(null);
+    await disposePendingUpdater();
   }
 
   function selectText(event: React.FocusEvent<HTMLInputElement> | React.MouseEvent<HTMLInputElement>) {
@@ -761,6 +834,10 @@ function App() {
       if (isReviewWindow && event.key === REVIEW_WINDOW_REPO_KEY) {
         setSelectedRepo(loadReviewWindowRepo());
       }
+
+      if (event.key === UPDATE_PROMPTED_VERSION_KEY) {
+        promptedUpdateVersionRef.current = loadPromptedUpdateVersion();
+      }
     };
 
     const onFocus = () => {
@@ -768,6 +845,7 @@ function App() {
       setProviderTokens(loadProviderTokens());
       setRepoProviderTokens(loadRepoProviderTokens());
       setHiddenRepoIds(loadHiddenRepoIds());
+      promptedUpdateVersionRef.current = loadPromptedUpdateVersion();
       if (isReviewWindow) {
         setSelectedRepo(loadReviewWindowRepo());
       }
@@ -787,6 +865,53 @@ function App() {
       saveReviewWindowRepo(activeRepo.common_dir);
     }
   }, [isReviewWindow, activeRepo?.common_dir]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void getVersion().then((version) => {
+      if (!cancelled) {
+        currentAppVersionRef.current = version;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isReviewWindow) return;
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen<boolean>(UPDATE_MENU_EVENT, () => {
+      if (!disposed) {
+        void checkForUpdates("manual");
+      }
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+        return;
+      }
+
+      unlisten = cleanup;
+    });
+
+    void checkForUpdates("auto");
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [isReviewWindow]);
+
+  useEffect(() => {
+    return () => {
+      void disposePendingUpdater();
+    };
+  }, []);
 
   useEffect(() => {
     if (!activeRepo) {
@@ -864,6 +989,112 @@ function App() {
     } finally {
       setBusy(false);
       setBusyLabelState(null);
+    }
+  }
+
+  async function installPendingUpdate() {
+    const update = pendingUpdaterRef.current;
+    if (!update) return;
+
+    setPendingUpdate(null);
+    setBusy(true);
+
+    let downloadedBytes = 0;
+    let totalBytes = 0;
+
+    try {
+      setBusyLabelState(localizedStatusMessage("update.downloading"));
+      setMessageState(localizedStatusMessage("update.downloading"));
+
+      await update.downloadAndInstall((progress: DownloadEvent) => {
+        if (progress.event === "Started") {
+          downloadedBytes = 0;
+          totalBytes = progress.data.contentLength ?? 0;
+        } else if (progress.event === "Progress") {
+          downloadedBytes += progress.data.chunkLength ?? 0;
+        } else if (progress.event === "Finished") {
+          setBusyLabelState(localizedStatusMessage("update.installing"));
+          setMessageState(localizedStatusMessage("update.installing"));
+          return;
+        }
+
+        const nextStatus = totalBytes > 0
+          ? t("update.downloadingProgress", formatByteSize(Math.min(downloadedBytes, totalBytes)), formatByteSize(totalBytes))
+          : t("update.downloading");
+        setBusyLabelState({ kind: "text", text: nextStatus });
+        setMessageState({ kind: "text", text: nextStatus });
+      });
+
+      pendingUpdaterRef.current = null;
+      setBusyLabelState(localizedStatusMessage("update.relaunching"));
+      setMessageState(localizedStatusMessage("update.installed"));
+      await relaunch();
+    } catch (error) {
+      setRawMessage(getErrorMessage(error));
+      if (pendingUpdaterRef.current === update) {
+        pendingUpdaterRef.current = null;
+      }
+      try {
+        await update.close();
+      } catch {}
+    } finally {
+      setBusy(false);
+      setBusyLabelState(null);
+    }
+  }
+
+  async function checkForUpdates(source: "auto" | "manual") {
+    if (updateCheckInFlightRef.current) return;
+    updateCheckInFlightRef.current = true;
+
+    try {
+      if (source === "manual") {
+        setBusy(true);
+        setBusyLabelState(localizedStatusMessage("update.checking"));
+        setMessageState(localizedStatusMessage("update.checking"));
+      }
+
+      const update = await check();
+      if (!update) {
+        if (source === "manual") {
+          setLocalizedMessage("update.upToDate", currentAppVersionRef.current || t("status.ready"));
+        }
+        return;
+      }
+
+      const alreadyPrompted = promptedUpdateVersionRef.current === update.version;
+      if (source === "auto" && alreadyPrompted) {
+        await update.close();
+        return;
+      }
+
+      await disposePendingUpdater();
+      pendingUpdaterRef.current = update;
+
+      if (source === "manual") {
+        setLocalizedMessage("update.available", update.version);
+      } else {
+        rememberPromptedUpdateVersion(update.version);
+        setLocalizedMessage("update.availableSilent", update.version);
+      }
+
+      setPendingUpdate({
+        version: update.version,
+        currentVersion: update.currentVersion,
+        body: update.body ?? null,
+        date: update.date ?? null,
+        source,
+      });
+    } catch (error) {
+      if (source === "manual") {
+        setRawMessage(getErrorMessage(error));
+      }
+    } finally {
+      if (source === "manual") {
+        setBusy(false);
+        setBusyLabelState(null);
+      }
+      updateCheckInFlightRef.current = false;
     }
   }
 
@@ -2209,6 +2440,30 @@ function App() {
               <button className="danger solid" onClick={() => void handleReviewCleanupDecision(true)} disabled={busy}>
                 {busy ? <Loader2 className="spin" size={16} /> : <Trash2 size={16} />}
                 {t("gitee.cleanupDelete")}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {pendingUpdate && (
+        <div className="modalOverlay" role="presentation">
+          <section className="confirmDialog" role="dialog" aria-modal="true" aria-labelledby="update-dialog-title">
+            <div className="confirmIcon branchIcon">
+              <RefreshCcw size={22} />
+            </div>
+            <div>
+              <h2 id="update-dialog-title">{t("update.title")}</h2>
+              <p>{t("update.description", pendingUpdate.version, pendingUpdate.currentVersion)}</p>
+              {pendingUpdate.body ? <p>{pendingUpdate.body}</p> : null}
+            </div>
+            <div className="confirmActions">
+              <button onClick={() => void dismissPendingUpdate()} disabled={busy}>
+                {t("update.later")}
+              </button>
+              <button className="primary" onClick={() => void installPendingUpdate()} disabled={busy}>
+                {busy ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
+                {t("update.installNow")}
               </button>
             </div>
           </section>

@@ -25,6 +25,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": [
       "app",
       "nsis",
@@ -37,5 +38,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRBMjc4OUQxMkM4MDk4NTcKUldSWG1JQXMwWWtuU2w1SEJmWFJsd2dKWnhnTllvM0JuK2xid1ZrVlZnT1lMd2lHRCtCNElPSkIK",
+      "endpoints": [
+        "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
