@@ -7,6 +7,8 @@
 WorkTreeDesk 是一个基于 Tauri、React 和 Vite 构建的桌面应用，聚焦 Git Worktree 管理与 Code Review 场景。
 
 > 因为没有做签名的原因? Mac安装包可能会被误报, 需要在系统设置里允许安装, 具体操作可以参考这个链接: https://support.apple.com/zh-cn/HT202491
+>
+> Mac如果还是继续报错, 请尝试执行这个命令: `sudo xattr -r -d com.apple.quarantine /Applications/WorktreeDesk.app` 来删除掉苹果添加的隔离标识, 注意: 只有在你信任该应用来源的情况下才应使用此命令，因为移除隔离标记会绕过 macOS 的安全检查。
 
 ## 功能概览
 
