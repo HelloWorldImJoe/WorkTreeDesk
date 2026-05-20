@@ -5141,7 +5141,7 @@ dependencies = [
 
 [[package]]
 name = "worktree-desk"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "base64 0.22.1",
  "reqwest 0.12.28",
