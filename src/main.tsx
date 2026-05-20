@@ -4,30 +4,42 @@ import { getVersion } from "@tauri-apps/api/app";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { relaunch } from "@tauri-apps/plugin-process";
+import { exit, relaunch } from "@tauri-apps/plugin-process";
 import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updater";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   AlertTriangle,
+  Apple,
   Check,
   ChevronDown,
   Code2,
   Eye,
   EyeOff,
   ExternalLink,
+  FileCode,
+  FileText,
   FolderOpen,
+  Gamepad2,
   GitBranch,
   GitCommit,
+  Globe,
   Info,
+  Lightbulb,
   Loader2,
   Monitor,
   Moon,
+  Play,
   Plus,
   RefreshCcw,
   Search,
   Settings,
+  Smartphone,
+  Sparkles,
   Sun,
+  Terminal,
   Trash2,
+  X,
+  Zap,
 } from "lucide-react";
 import { LocaleProvider, useLocale } from "./i18n";
 import "./styles.css";
@@ -125,23 +137,23 @@ type RepoProviderTokenMap = Record<string, string>;
 type AppView = "workspace" | "reviews";
 
 const editorOptions = [
-  { value: "vscode", label: "VS Code", icon: Code2 },
-  { value: "cursor", label: "Cursor", icon: Code2 },
-  { value: "windsurf", label: "Windsurf", icon: Code2 },
+  { value: "vscode", label: "VS Code", icon: Code2, iconSrc: "/editors/vscode.svg" },
+  { value: "cursor", label: "Cursor", icon: Sparkles, iconSrc: "/editors/cursor.svg" },
+  { value: "windsurf", label: "Windsurf", icon: Zap, iconSrc: "/editors/windsurf.svg" },
   { value: "zed", label: "Zed", icon: Code2 },
-  { value: "sublime", label: "Sublime Text", icon: Code2 },
-  { value: "webstorm", label: "WebStorm", icon: Code2 },
-  { value: "idea", label: "IntelliJ IDEA", icon: Code2 },
-  { value: "pycharm", label: "PyCharm", icon: Code2 },
-  { value: "goland", label: "GoLand", icon: Code2 },
-  { value: "phpstorm", label: "PhpStorm", icon: Code2 },
-  { value: "clion", label: "CLion", icon: Code2 },
-  { value: "rider", label: "Rider", icon: Code2 },
-  { value: "android-studio", label: "Android Studio", icon: Code2 },
-  { value: "xcode", label: "Xcode", icon: Code2 },
+  { value: "sublime", label: "Sublime Text", icon: FileCode, iconSrc: "/editors/sublime.svg" },
+  { value: "webstorm", label: "WebStorm", icon: Globe, iconSrc: "/editors/webstorm.svg" },
+  { value: "idea", label: "IntelliJ IDEA", icon: Lightbulb, iconSrc: "/editors/idea.svg" },
+  { value: "pycharm", label: "PyCharm", icon: Code2, iconSrc: "/editors/pycharm.svg" },
+  { value: "goland", label: "GoLand", icon: Play, iconSrc: "/editors/goland.svg" },
+  { value: "phpstorm", label: "PhpStorm", icon: FileCode, iconSrc: "/editors/phpstorm.svg" },
+  { value: "clion", label: "CLion", icon: Terminal, iconSrc: "/editors/clion.svg" },
+  { value: "rider", label: "Rider", icon: Gamepad2, iconSrc: "/editors/rider.svg" },
+  { value: "android-studio", label: "Android Studio", icon: Smartphone, iconSrc: "/editors/android-studio.svg" },
+  { value: "xcode", label: "Xcode", icon: Apple, iconSrc: "/editors/xcode.svg" },
   { value: "nova", label: "Nova", icon: Code2 },
-  { value: "textmate", label: "TextMate", icon: Code2 },
-  { value: "emacs", label: "Emacs", icon: Code2 },
+  { value: "textmate", label: "TextMate", icon: FileText, iconSrc: "/editors/textmate.svg" },
+  { value: "emacs", label: "Emacs", icon: Terminal, iconSrc: "/editors/emacs.svg" },
 ];
 
 const SCAN_RESULT_KEY = "worktree-desk.scanResult";
@@ -152,6 +164,7 @@ const PROVIDER_TOKENS_KEY = "worktree-desk.providerTokens";
 const REPO_PROVIDER_TOKENS_KEY = "worktree-desk.repoProviderTokens";
 const REVIEW_CLEANUP_PREFERENCE_KEY = "worktree-desk.reviewCleanupPreference";
 const REVIEW_WINDOW_REPO_KEY = "worktree-desk.reviewWindowRepo";
+const MAIN_WINDOW_LABEL = "main";
 const REVIEW_WINDOW_LABEL = "reviews";
 const REVIEW_WINDOW_DEFAULT_WIDTH = 1365;
 const REVIEW_WINDOW_DEFAULT_HEIGHT = 1152;
@@ -524,12 +537,14 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+type StatusTone = "default" | "error";
+
 type StatusMessageState =
-  | { kind: "key"; key: string; args?: unknown[] }
-  | { kind: "text"; text: string };
+  | { kind: "key"; key: string; args?: unknown[]; tone?: StatusTone }
+  | { kind: "text"; text: string; tone?: StatusTone };
 
 function localizedStatusMessage(key: string, ...args: unknown[]): StatusMessageState {
-  return { kind: "key", key, args };
+  return { kind: "key", key, args, tone: "default" };
 }
 
 function resolveStatusMessage(
@@ -623,14 +638,22 @@ function App() {
   const activeProviderToken = getEffectiveProviderToken(activeRepo, providerTokens, repoProviderTokens);
   const activeRepoTokenOverride = getRepoProviderTokenOverride(activeRepo, repoProviderTokens);
   const selectedEditor = editorOptions.find((option) => option.value === editor) ?? editorOptions[0];
-  const SelectedEditorIcon = selectedEditor.icon;
+  const renderEditorIcon = (size: number) => {
+    if (selectedEditor.iconSrc) {
+      return <img src={selectedEditor.iconSrc} alt={selectedEditor.label} width={size} height={size} style={{ flexShrink: 0 }} />;
+    }
+    const Icon = selectedEditor.icon;
+    return <Icon size={size} />;
+  };
   const busyLabel = resolveStatusMessage(t, busyLabelState);
   const message = resolveStatusMessage(t, messageState);
+  const messageTone = messageState.tone ?? "default";
   const skipNextEditorPersistRef = useRef(false);
   const branchCacheRef = useRef<Record<string, BranchInfo[]>>({});
   const pullRequestCacheRef = useRef<Record<string, PullRequestCacheEntry>>({});
   const promptedUpdateVersionRef = useRef(loadPromptedUpdateVersion());
   const updateCheckInFlightRef = useRef(false);
+  const pendingManualUpdateCheckRef = useRef(false);
   const currentAppVersionRef = useRef("");
   const pendingUpdaterRef = useRef<Update | null>(null);
 
@@ -638,8 +661,8 @@ function App() {
     setMessageState(localizedStatusMessage(key, ...args));
   }
 
-  function setRawMessage(text: string) {
-    setMessageState({ kind: "text", text });
+  function setRawMessage(text: string, tone: StatusTone = "error") {
+    setMessageState({ kind: "text", text, tone });
   }
 
   function setLocalizedBusyLabel(key: string, ...args: unknown[]) {
@@ -649,6 +672,20 @@ function App() {
   function rememberPromptedUpdateVersion(version: string) {
     promptedUpdateVersionRef.current = version;
     savePromptedUpdateVersion(version);
+  }
+
+  async function showMainWindow() {
+    const mainWindow = await WebviewWindow.getByLabel(MAIN_WINDOW_LABEL);
+    if (!mainWindow) return;
+
+    await mainWindow.show();
+    await mainWindow.setFocus();
+  }
+
+  async function hideCurrentWindow() {
+    try {
+      await WebviewWindow.getCurrent().hide();
+    } catch {}
   }
 
   async function disposePendingUpdater() {
@@ -908,6 +945,58 @@ function App() {
   }, [isReviewWindow]);
 
   useEffect(() => {
+    const currentWindow = WebviewWindow.getCurrent();
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    if (isReviewWindow) {
+      void currentWindow.onCloseRequested(async (event) => {
+        event.preventDefault();
+
+        try {
+          await showMainWindow();
+        } catch {}
+
+        try {
+          await currentWindow.hide();
+        } catch {}
+      }).then((cleanup) => {
+        if (disposed) {
+          cleanup();
+          return;
+        }
+
+        unlisten = cleanup;
+      });
+
+      return () => {
+        disposed = true;
+        unlisten?.();
+      };
+    }
+
+    void currentWindow.onCloseRequested(async (event) => {
+      event.preventDefault();
+
+      try {
+        await exit(0);
+      } catch {}
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+        return;
+      }
+
+      unlisten = cleanup;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [isReviewWindow]);
+
+  useEffect(() => {
     return () => {
       void disposePendingUpdater();
     };
@@ -1022,7 +1111,7 @@ function App() {
           ? t("update.downloadingProgress", formatByteSize(Math.min(downloadedBytes, totalBytes)), formatByteSize(totalBytes))
           : t("update.downloading");
         setBusyLabelState({ kind: "text", text: nextStatus });
-        setMessageState({ kind: "text", text: nextStatus });
+        setMessageState({ kind: "text", text: nextStatus, tone: "default" });
       });
 
       pendingUpdaterRef.current = null;
@@ -1044,7 +1133,14 @@ function App() {
   }
 
   async function checkForUpdates(source: "auto" | "manual") {
-    if (updateCheckInFlightRef.current) return;
+    if (updateCheckInFlightRef.current) {
+      if (source === "manual") {
+        pendingManualUpdateCheckRef.current = true;
+        setLocalizedMessage("update.checking");
+      }
+      return;
+    }
+
     updateCheckInFlightRef.current = true;
 
     try {
@@ -1094,7 +1190,18 @@ function App() {
         setBusy(false);
         setBusyLabelState(null);
       }
+
       updateCheckInFlightRef.current = false;
+
+      const shouldReplayManualCheck = source === "auto"
+        && pendingManualUpdateCheckRef.current
+        && !pendingUpdaterRef.current;
+
+      pendingManualUpdateCheckRef.current = false;
+
+      if (shouldReplayManualCheck) {
+        void checkForUpdates("manual");
+      }
     }
   }
 
@@ -1353,6 +1460,7 @@ function App() {
     if (existing) {
       await existing.show();
       await existing.setFocus();
+      await hideCurrentWindow();
       return;
     }
 
@@ -1370,13 +1478,39 @@ function App() {
       resizable: true,
     });
 
-    reviewWindow.once("tauri://error", (event) => {
-      if (typeof event.payload === "string") {
-        setRawMessage(event.payload);
-      } else {
-        setLocalizedMessage("review.unavailable", activeProvider?.display_name || "Git provider");
-      }
+    const reviewWindowReady = new Promise<boolean>((resolve) => {
+      let settled = false;
+
+      const settle = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+
+      reviewWindow.once("tauri://created", () => {
+        settle(true);
+      });
+
+      reviewWindow.once("tauri://error", (event) => {
+        void showMainWindow();
+
+        if (typeof event.payload === "string") {
+          setRawMessage(event.payload);
+        } else {
+          setLocalizedMessage("review.unavailable", activeProvider?.display_name || "Git provider");
+        }
+
+        settle(false);
+      });
     });
+
+    if (await reviewWindowReady) {
+      try {
+        await reviewWindow.setFocus();
+      } catch {}
+
+      await hideCurrentWindow();
+    }
   }
 
   async function scan(root = scanRoot) {
@@ -1556,6 +1690,18 @@ function App() {
     );
   }
 
+  async function copyWorktreePath(path: string) {
+    const copied = await runAction(
+      async () => {
+        await navigator.clipboard.writeText(path);
+      },
+      localizedStatusMessage("card.copyPathDone"),
+      localizedStatusMessage("card.copyPathDoing"),
+    );
+
+    return copied !== null;
+  }
+
   function replaceRepo(updated: RepositoryInfo) {
     setResult((previous) => {
       if (!previous) return previous;
@@ -1690,8 +1836,8 @@ function App() {
           )}
 
           <div className="titleBarUtilities">
-            <div className={`statusBanner ${busy ? "busy" : ""}`} title={message}>
-              {busy ? <Loader2 className="spin" size={16} /> : <Check size={16} />}
+            <div className={`statusBanner ${busy ? "busy" : ""} ${messageTone === "error" ? "error" : ""}`.trim()} title={message}>
+              {busy ? <Loader2 className="spin" size={16} /> : messageTone === "error" ? <X  size={16} color="red" /> : <Check size={16}/>}
               <span className="statusBannerText">{message}</span>
               <button
                 type="button"
@@ -1848,7 +1994,7 @@ function App() {
                     <div className="workspaceHeaderActions">
                       <div className="headerActionRow">
                         <button className="headerActionButton" onClick={() => void openWorktree(activeRepo.root)} disabled={busy}>
-                          <SelectedEditorIcon size={16} />
+                          {renderEditorIcon(16)}
                           {selectedEditor.label}
                         </button>
                         <button
@@ -2204,19 +2350,19 @@ function App() {
                           <h3>{t("dashboard.worktreeTitle")}</h3>
                           <p>{t("sidebar.worktrees", activeRepo.worktrees.length)}</p>
                         </div>
-                        <button
-                          type="button"
-                          className={`toggleButton ${forceRemove ? "active" : ""}`}
-                          onClick={() => setForceRemove((current) => !current)}
-                          title={t("checkbox.force")}
-                        >
-                          <Trash2 size={16} />
-                          {t("worktree.forceToggle")}
-                        </button>
+                        <label className="forceRemoveCheckbox" title={t("checkbox.force")}>
+                          <input
+                            type="checkbox"
+                            checked={forceRemove}
+                            onChange={(e) => setForceRemove(e.target.checked)}
+                          />
+                          <span>{t("worktree.forceToggle")}</span>
+                        </label>
                       </div>
 
                       <div className="worktreeList">
                         {activeRepo.worktrees.map((worktree) => {
+                          const isRootWorktree = isMainWorktree(worktree);
                           const worktreeLabel = worktree.prunable
                             ? t("badge.prunable")
                             : worktree.detached
@@ -2224,6 +2370,8 @@ function App() {
                               : t("badge.ready");
                           const canRemove = canRemoveWorktree(worktree);
                           const removeTitle = canRemove ? t("card.removeTitle") : getRemoveWorktreeDisabledReason(worktree);
+                          const branchLabel = worktree.branch || t("card.detached");
+                          const shortHead = worktree.head?.slice(0, 12) || t("card.unknown");
 
                           return (
                             <article key={worktree.path} className="worktreeRow">
@@ -2231,35 +2379,35 @@ function App() {
                                 <div className="worktreeRowTop">
                                   <div className="worktreeRowTitle">
                                     <strong>{basename(worktree.path)}</strong>
-                                    <span>{worktree.path}</span>
+                                    <span className="worktreePathValue">{worktree.path}</span>
                                   </div>
-                                  <span className={`badge ${worktree.prunable ? "warn" : worktree.detached ? "neutral" : ""}`}>
-                                    {worktreeLabel}
-                                  </span>
+                                  <div className="worktreeBadgeStack">
+                                    {isRootWorktree ? <span className="badge neutral">{t("toolbar.currentRepo")}</span> : null}
+                                    <span className={`badge ${worktree.prunable ? "warn" : worktree.detached ? "neutral" : ""}`}>
+                                      {worktreeLabel}
+                                    </span>
+                                  </div>
                                 </div>
 
-                                <div className="worktreeMetaRow">
-                                  <span className="metaPill">
-                                    <GitBranch size={14} />
-                                    {worktree.branch || t("card.detached")}
-                                  </span>
-                                  <span className="metaPill">
-                                    <GitCommit size={14} />
-                                    {worktree.head?.slice(0, 12) || t("card.unknown")}
-                                  </span>
+                                <div className="worktreeMetaRow compactWorktreeMetaRow">
+                                  <span className="metaPill">{t("dashboard.branch")}: {branchLabel}</span>
+                                  <span className="metaPill">HEAD: {shortHead}</span>
+                                  {worktree.bare ? <span className="metaPill">Bare</span> : null}
                                 </div>
                               </div>
 
                               <div className="worktreeRowActions">
                                 <button
+                                  className="worktreeActionButton primaryAction"
                                   title={t("card.openEditor", selectedEditor.label)}
                                   onClick={() => void openWorktree(worktree.path)}
                                   disabled={busy}
                                 >
-                                  <SelectedEditorIcon size={16} />
+                                  {renderEditorIcon(16)}
                                   {selectedEditor.label}
                                 </button>
                                 <button
+                                  className="worktreeActionButton"
                                   title={t("card.finderTitle")}
                                   onClick={() => void openInFileManager(worktree.path)}
                                   disabled={busy}
@@ -2268,14 +2416,27 @@ function App() {
                                   {t("card.finder")}
                                 </button>
                                 <button
-                                  className="danger"
-                                  onClick={() => setPendingRemove(worktree)}
-                                  disabled={busy || !canRemove}
-                                  title={removeTitle}
+                                  className="worktreeActionButton"
+                                  onClick={() => void copyWorktreePath(worktree.path)}
+                                  disabled={busy}
+                                  title={t("card.copyPathTitle")}
                                 >
-                                  <Trash2 size={16} />
-                                  {t("card.remove")}
+                                  <Code2 size={16} />
+                                  {t("card.copyPath")}
                                 </button>
+                                {canRemove ? (
+                                  <button
+                                    className="worktreeActionButton danger"
+                                    onClick={() => setPendingRemove(worktree)}
+                                    disabled={busy}
+                                    title={removeTitle}
+                                  >
+                                    <Trash2 size={16} />
+                                    {t("card.remove")}
+                                  </button>
+                                ) : (
+                                  <span className="worktreeActionHint" title={removeTitle}>{removeTitle}</span>
+                                )}
                               </div>
                             </article>
                           );
@@ -2332,6 +2493,10 @@ function App() {
                         <button onClick={() => void refreshRepo()} disabled={busy}>
                           {busy ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
                           {t("refresh")}
+                        </button>
+                        <button onClick={() => void prune()} disabled={busy || prunableCount === 0}>
+                          {busy ? <Loader2 className="spin" size={16} /> : <Trash2 size={16} />}
+                          {t("prune")}
                         </button>
                       </div>
                     </section>

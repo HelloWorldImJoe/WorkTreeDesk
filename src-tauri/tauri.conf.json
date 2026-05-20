@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Worktree Desk",
         "width": 1326,
         "height": 1037,

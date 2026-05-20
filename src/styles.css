@@ -18,6 +18,8 @@
   --highlight-border: #24292f;
   --highlight-text: #1f2328;
   --highlight-shadow: inset 0 0 0 1px #24292f;
+  --danger-border: #cf222e;
+  --danger-shadow: inset 0 0 0 1px #cf222e;
   --overlay: rgba(31, 35, 40, 0.52);
   --radius: 4px;
   --space-1: 4px;
@@ -51,6 +53,8 @@
   --highlight-border: #8b949e;
   --highlight-text: #e6edf3;
   --highlight-shadow: inset 0 0 0 1px #8b949e;
+  --danger-border: #f85149;
+  --danger-shadow: inset 0 0 0 1px #f85149;
   --overlay: rgba(1, 4, 9, 0.74);
 }
 
@@ -86,7 +90,7 @@ textarea {
 }
 
 button,
-input,
+input:not([type="checkbox"]):not([type="radio"]),
 select {
   min-height: 40px;
 }
@@ -126,7 +130,7 @@ button svg {
   flex: 0 0 auto;
 }
 
-input,
+input:not([type="checkbox"]):not([type="radio"]),
 select {
   appearance: none;
   background: var(--surface);
@@ -346,6 +350,15 @@ input::placeholder {
   position: relative;
   padding: 0 var(--space-3);
   width: var(--status-banner-width);
+}
+
+.statusBanner.error {
+  border-color: var(--danger-border);
+  box-shadow: var(--danger-shadow);
+}
+
+.statusBanner.error .statusBannerText {
+  color: var(--danger-border);
 }
 
 .reviewTitleBar .statusBanner {
@@ -817,7 +830,7 @@ input::placeholder {
   align-items: stretch;
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.85fr);
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   overflow: hidden;
 }
 
@@ -945,7 +958,12 @@ input::placeholder {
 }
 
 .worktreeList {
+  align-content: start;
   display: grid;
+  gap: var(--space-3);
+  grid-auto-rows: max-content;
+  grid-template-columns: minmax(0, 1fr);
+  padding-right: 2px;
 }
 
 .reviewQueue {
@@ -965,6 +983,21 @@ input::placeholder {
   border-radius: var(--radius);
   overflow: hidden;
   width: 100%;
+}
+
+.worktreeRow {
+  background: var(--surface);
+  border-color: var(--line);
+  box-shadow: 0 10px 24px rgba(31, 35, 40, 0.06);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.worktreeRow:hover {
+  border-color: var(--line-strong);
+  box-shadow: 0 14px 28px rgba(31, 35, 40, 0.1);
 }
 
 .worktreeRow.active,
@@ -990,6 +1023,13 @@ input::placeholder {
   width: 100%;
 }
 
+.worktreeSummary {
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-subtle) 100%);
+  gap: 10px;
+  grid-template-rows: auto auto;
+  padding: 14px 16px;
+}
+
 .pullRequestSelect {
   grid-template-columns: minmax(0, 1fr);
   justify-content: stretch;
@@ -1006,6 +1046,33 @@ input::placeholder {
   white-space: nowrap;
 }
 
+.forceRemoveCheckbox {
+  align-items: center;
+  align-self: start;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 500;
+  gap: 6px;
+  justify-self: end;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.forceRemoveCheckbox input[type="checkbox"] {
+  accent-color: var(--strong);
+  cursor: pointer;
+  height: 16px;
+  margin: 0;
+  min-height: auto;
+  width: 16px;
+}
+
+.forceRemoveCheckbox:hover {
+  color: var(--text-primary);
+}
+
 .worktreeRowTitle,
 .subsectionHeader,
 .detailField,
@@ -1014,6 +1081,66 @@ input::placeholder {
   display: grid;
   gap: var(--space-2);
   min-width: 0;
+}
+
+.worktreeRowTitle,
+.worktreeMetaRow {
+  align-content: start;
+}
+
+.worktreeBadgeStack,
+.worktreeInfoGrid {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.worktreeBadgeStack {
+  gap: 6px;
+  justify-items: end;
+}
+
+.worktreePathValue {
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.worktreeInfoGrid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.worktreeInfoCard {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.worktreeInfoCard span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.worktreeInfoCard strong {
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.worktreeInfoCardWide {
+  grid-column: 1 / -1;
 }
 
 .workspaceIdentity,
@@ -1036,6 +1163,46 @@ input::placeholder {
   font-weight: 700;
   line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+.compactWorktreeMetaRow {
+  align-items: center;
+  gap: 8px;
+}
+
+.worktreeActionButton {
+  background: var(--surface);
+  border-color: var(--line);
+  box-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
+  justify-content: flex-start;
+  min-height: 38px;
+  padding: 0 12px;
+}
+
+.worktreeActionButton:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--line-strong);
+}
+
+.worktreeActionButton.primaryAction {
+  background: var(--highlight-bg);
+  border-color: var(--highlight-border);
+  box-shadow: var(--highlight-shadow);
+  color: var(--highlight-text);
+}
+
+.worktreeActionButton.primaryAction svg {
+  color: currentColor;
+}
+
+.worktreeActionHint {
+  align-items: center;
+  color: var(--text-secondary);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 500;
+  min-height: 38px;
+  padding: 0 6px;
 }
 
 .sidebarRepoItem strong,
@@ -1105,7 +1272,13 @@ input::placeholder {
 }
 
 .worktreeRowActions {
-  padding: var(--space-3);
+  align-items: stretch;
+  background: var(--surface-subtle);
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  padding: 12px 14px;
 }
 
 .stackedButtons {
@@ -1115,6 +1288,15 @@ input::placeholder {
 .stackedButtons button,
 .worktreeRowActions button {
   justify-content: flex-start;
+}
+
+.worktreeRowActions button {
+  min-height: 38px;
+}
+
+.worktreeRowActions button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--line-strong);
 }
 
 .wideButton {
@@ -1396,6 +1578,10 @@ input::placeholder {
   .reviewControlBar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .worktreeInfoGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1120px) {
@@ -1487,6 +1673,17 @@ input::placeholder {
   .reviewControlBar,
   .detailActionGrid {
     grid-template-columns: 1fr;
+  }
+
+  .worktreeBadgeStack,
+  .worktreeInfoGrid,
+  .worktreeRowActions {
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+  }
+
+  .worktreeBadgeStack {
+    justify-items: start;
   }
 
   .confirmDialog {
