@@ -1329,13 +1329,6 @@ function App() {
           },
         });
 
-        await invoke("open_url", {
-          request: {
-            url: review.web_url,
-            editor: "vscode",
-          },
-        });
-
         await invoke("open_path", {
           request: {
             path: review.worktree_path,
