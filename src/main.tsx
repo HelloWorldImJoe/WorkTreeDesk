@@ -1619,9 +1619,7 @@ function App() {
       if (!activeRepo) {
         setLocalizedMessage("card.removeTitle");
       } else if (activeRepo.worktrees.length <= 1) {
-        setLocalizedMessage("worktree.removeLastBlocked");
-      } else if (isMainWorktree(target)) {
-        setLocalizedMessage("worktree.removeMainBlocked");
+        // setLocalizedMessage("worktree.removeLastBlocked");
       } else {
         setLocalizedMessage("card.removeTitle");
       }
@@ -1745,12 +1743,8 @@ function App() {
 
   const activeRepoName = activeRepo ? activeRepo.name || basename(activeRepo.root) : t("toolbar.noRepo");
   const prunableCount = activeRepo?.worktrees.filter((worktree) => Boolean(worktree.prunable)).length ?? 0;
-  function isMainWorktree(worktree: WorktreeInfo) {
-    return Boolean(activeRepo) && worktree.path === activeRepo.root;
-  }
-
   function canRemoveWorktree(worktree: WorktreeInfo) {
-    return Boolean(activeRepo) && activeRepo.worktrees.length > 1 && !isMainWorktree(worktree);
+    return Boolean(activeRepo && worktree) && activeRepo.worktrees.length > 1;
   }
 
   function getRemoveWorktreeDisabledReason(worktree: WorktreeInfo) {
@@ -1759,11 +1753,8 @@ function App() {
     }
 
     if (activeRepo.worktrees.length <= 1) {
-      return t("worktree.removeLastBlocked");
-    }
-
-    if (isMainWorktree(worktree)) {
-      return t("worktree.removeMainBlocked");
+      // return t("worktree.removeLastBlocked");
+      return "";
     }
 
     return t("card.removeTitle");
@@ -2362,7 +2353,6 @@ function App() {
 
                       <div className="worktreeList">
                         {activeRepo.worktrees.map((worktree) => {
-                          const isRootWorktree = isMainWorktree(worktree);
                           const worktreeLabel = worktree.prunable
                             ? t("badge.prunable")
                             : worktree.detached
@@ -2382,7 +2372,6 @@ function App() {
                                     <span className="worktreePathValue">{worktree.path}</span>
                                   </div>
                                   <div className="worktreeBadgeStack">
-                                    {isRootWorktree ? <span className="badge neutral">{t("toolbar.currentRepo")}</span> : null}
                                     <span className={`badge ${worktree.prunable ? "warn" : worktree.detached ? "neutral" : ""}`}>
                                       {worktreeLabel}
                                     </span>

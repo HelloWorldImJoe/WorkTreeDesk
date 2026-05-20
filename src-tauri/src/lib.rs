@@ -286,10 +286,16 @@ fn add_worktree(request: AddWorktreeRequest) -> Result<RepositoryInfo, String> {
 fn remove_worktree(request: RemoveWorktreeRequest) -> Result<RepositoryInfo, String> {
     let repo_path = expand_home(&request.repo_path)?;
     let worktree_path = expand_home(&request.worktree_path)?;
-
-    if paths_equal(&repo_path, &worktree_path) {
-        return Err("The main worktree cannot be removed.".to_string());
-    }
+    let command_repo_path = if paths_equal(&repo_path, &worktree_path) {
+        let porcelain = git_stdout(&repo_path, &["worktree", "list", "--porcelain"])?;
+        parse_worktrees(&porcelain)
+            .into_iter()
+            .map(|worktree| PathBuf::from(worktree.path))
+            .find(|candidate| !paths_equal(candidate, &worktree_path))
+            .ok_or_else(|| "At least one worktree must remain.".to_string())?
+    } else {
+        repo_path.clone()
+    };
 
     let mut args = vec![
         "worktree".to_string(),
@@ -301,8 +307,8 @@ fn remove_worktree(request: RemoveWorktreeRequest) -> Result<RepositoryInfo, Str
         args.push("--force".to_string());
     }
 
-    run_git(&repo_path, &args)?;
-    inspect_repository(&repo_path)
+    run_git(&command_repo_path, &args)?;
+    inspect_repository(&command_repo_path)
 }
 
 #[tauri::command]
