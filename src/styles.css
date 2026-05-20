@@ -481,7 +481,11 @@ input::placeholder {
 }
 
 .sidebarRepoSection {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
 
 .sectionBar {
@@ -545,7 +549,9 @@ input::placeholder {
 .sidebarRepoList {
   align-content: start;
   display: grid;
+  flex: 1 1 auto;
   gap: var(--space-2);
+  grid-auto-rows: minmax(128px, auto);
   min-height: 0;
   min-width: 0;
   overflow: auto;
@@ -559,6 +565,7 @@ input::placeholder {
   display: grid;
   gap: 0;
   grid-template-columns: minmax(0, 1fr) 42px;
+  min-height: 128px;
   min-width: 0;
   overflow: hidden;
   padding: 0;
