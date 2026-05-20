@@ -62,12 +62,21 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-工作流会在 GitHub Actions 中自动执行 macOS 打包，并把产物上传到对应的 GitHub Release。
+工作流会在 GitHub Actions 中自动执行多平台打包，并把产物上传到对应的 GitHub Release。
 当前发布矩阵会生成以下产物：
 
 - macOS app bundle
 - Windows NSIS 安装包
 - Linux AppImage
+
+为方便在 Release 页面区分平台，上传后的资产文件名会附带平台码：
+
+- `mac-arm64`: macOS Apple Silicon
+- `mac-x64`: macOS Intel
+- `win-x64`: Windows x64
+- `linux-x64`: Linux x64
+
+命名格式统一为 `WorktreeDesk_vX.Y.Z_<platform-code>` 加原始产物扩展名；`latest.json` 仍保持固定名称，供自动更新使用。
 
 如果要让自动更新真正可用，还需要在仓库 Secrets 中配置以下值：
 

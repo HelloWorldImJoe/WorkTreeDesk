@@ -18,18 +18,22 @@ jobs:
         include:
           - name: Linux AppImage
             platform: ubuntu-22.04
+            assetCode: linux-x64
             rustTarget: ""
             args: ""
           - name: Windows NSIS
             platform: windows-latest
+            assetCode: win-x64
             rustTarget: ""
             args: ""
           - name: macOS Apple Silicon
             platform: macos-latest
+            assetCode: mac-arm64
             rustTarget: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
           - name: macOS Intel
             platform: macos-latest
+            assetCode: mac-x64
             rustTarget: x86_64-apple-darwin
             args: --target x86_64-apple-darwin
 
@@ -74,6 +78,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: WorktreeDesk ${{ github.ref_name }}
           releaseBody: See the assets below to download this version of WorktreeDesk.
+          assetNamePattern: '[name]_${{ github.ref_name }}_${{ matrix.assetCode }}[setup][ext]'
           generateReleaseNotes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           uploadUpdaterJson: true
