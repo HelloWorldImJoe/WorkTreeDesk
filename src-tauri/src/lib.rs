@@ -9,9 +9,11 @@ use std::{
     time::Duration,
 };
 use tauri::{
-    menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder},
+    menu::{Menu, MenuItemBuilder, PredefinedMenuItem},
     Emitter, Manager,
 };
+#[cfg(not(target_os = "macos"))]
+use tauri::menu::HELP_SUBMENU_ID;
 use walkdir::{DirEntry, WalkDir};
 
 const UPDATE_MENU_ID: &str = "app.check-for-updates";
@@ -1531,44 +1533,33 @@ fn gitlab_post(
 }
 
 fn build_app_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    let about_item = PredefinedMenuItem::about(app, None, None)?;
-    let services_item = PredefinedMenuItem::services(app, None)?;
-    let hide_item = PredefinedMenuItem::hide(app, None)?;
-    let hide_others_item = PredefinedMenuItem::hide_others(app, None)?;
-    let show_all_item = PredefinedMenuItem::show_all(app, None)?;
-    let quit_item = PredefinedMenuItem::quit(app, None)?;
-    let cut_item = PredefinedMenuItem::cut(app, None)?;
-    let copy_item = PredefinedMenuItem::copy(app, None)?;
-    let paste_item = PredefinedMenuItem::paste(app, None)?;
-    let select_all_item = PredefinedMenuItem::select_all(app, None)?;
+    let menu = Menu::default(app)?;
     let update_item = MenuItemBuilder::with_id(UPDATE_MENU_ID, "检查更新").build(app)?;
 
-    let app_submenu = SubmenuBuilder::new(app, "Worktree Desk")
-        .item(&about_item)
-        .separator()
-        .item(&update_item)
-        .separator()
-        .item(&services_item)
-        .separator()
-        .item(&hide_item)
-        .item(&hide_others_item)
-        .item(&show_all_item)
-        .separator()
-        .item(&quit_item)
-        .build()?;
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(app_submenu) = menu
+            .items()?
+            .into_iter()
+            .find_map(|item| item.as_submenu().cloned())
+        {
+            let separator = PredefinedMenuItem::separator(app)?;
+            app_submenu.insert_items(&[&update_item, &separator], 2)?;
+        }
+    }
 
-    let edit_submenu = SubmenuBuilder::new(app, "编辑")
-        .item(&cut_item)
-        .item(&copy_item)
-        .item(&paste_item)
-        .separator()
-        .item(&select_all_item)
-        .build()?;
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Some(help_submenu) = menu
+            .get(HELP_SUBMENU_ID)
+            .and_then(|item| item.as_submenu().cloned())
+        {
+            let separator = PredefinedMenuItem::separator(app)?;
+            help_submenu.append_items(&[&separator, &update_item])?;
+        }
+    }
 
-    MenuBuilder::new(app)
-        .item(&app_submenu)
-        .item(&edit_submenu)
-        .build()
+    Ok(menu)
 }
 
 pub fn run() {
