@@ -5,17 +5,30 @@ use crate::{
     models::{
         CodeReviewResult, GiteeCodeReviewRequest, GiteePullRequestActionRequest,
         GiteePullRequestDetailRequest, GiteePullRequestInfo, GiteePullRequestListRequest,
-        GiteeRepositoryInfo, RepositoryInfo,
+        GiteeRepositoryInfo, PullRequestChangedFileInfo, PullRequestCommitInfo,
+        RepositoryInfo, RepositoryMemberInfo,
     },
     provider::require_gitee_repository,
     repository::inspect_repository,
 };
 
-use super::shared::{
-    api_client, cleanup_code_review_worktree_for_refs, extract_branch_name,
-    extract_pull_request_branch_ref, extract_pull_request_web_url, extract_repo_full_name,
-    fetch_provider_git_auth, fetch_source_uses_provider_https, first_i64, first_string,
-    parse_json_response, prepare_review_worktree, require_access_token, resolve_fetch_source,
+use super::{
+    api::gitee::{
+        approve_pull_request_review as gitee_api_approve_pull_request_review,
+        approve_pull_request_test as gitee_api_approve_pull_request_test,
+        get_pull_request as gitee_api_get_pull_request,
+        list_pull_request_commits as gitee_api_list_pull_request_commits,
+        list_pull_request_files as gitee_api_list_pull_request_files,
+        list_pull_requests as gitee_api_list_pull_requests,
+        list_repository_subscribers, reset_pull_request_review as gitee_api_reset_pull_request_review,
+        reset_pull_request_test as gitee_api_reset_pull_request_test,
+    },
+    shared::{
+        cleanup_code_review_worktree_for_refs, extract_branch_name,
+        extract_pull_request_branch_ref, extract_pull_request_web_url, extract_repo_full_name,
+        fetch_provider_git_auth, fetch_source_uses_provider_https, first_i64, first_string,
+        prepare_review_worktree, require_access_token, resolve_fetch_source,
+    },
 };
 
 #[tauri::command]
@@ -25,17 +38,7 @@ pub(crate) fn list_gitee_pull_requests(
     let repo_path = expand_home(&request.repo_path)?;
     let repo = require_gitee_repository(&repo_path)?;
     let access_token = require_access_token(&request.access_token)?;
-    let response = gitee_get(
-        &access_token,
-        &format!("/repos/{}/{}/pulls", repo.owner, repo.repo),
-        vec![
-            ("state".to_string(), "open".to_string()),
-            ("sort".to_string(), "created".to_string()),
-            ("direction".to_string(), "desc".to_string()),
-            ("page".to_string(), "1".to_string()),
-            ("per_page".to_string(), "100".to_string()),
-        ],
-    )?;
+    let response = gitee_api_list_pull_requests(&repo, &access_token)?;
 
     let entries = response
         .as_array()
@@ -67,15 +70,7 @@ pub(crate) fn approve_gitee_pull_request_review(
     let repo = require_gitee_repository(&repo_path)?;
     let access_token = require_access_token(&request.access_token)?;
 
-    gitee_post(
-        &access_token,
-        &format!("/repos/{}/{}/pulls/{}/review", repo.owner, repo.repo, request.number),
-        vec![
-            ("action".to_string(), "approve".to_string()),
-            ("event".to_string(), "approve".to_string()),
-            ("state".to_string(), "approved".to_string()),
-        ],
-    )?;
+    gitee_api_approve_pull_request_review(&repo, &access_token, request.number)?;
 
     inspect_repository(&repo_path)
 }
@@ -88,15 +83,7 @@ pub(crate) fn approve_gitee_pull_request_test(
     let repo = require_gitee_repository(&repo_path)?;
     let access_token = require_access_token(&request.access_token)?;
 
-    gitee_post(
-        &access_token,
-        &format!("/repos/{}/{}/pulls/{}/test", repo.owner, repo.repo, request.number),
-        vec![
-            ("action".to_string(), "pass".to_string()),
-            ("event".to_string(), "pass".to_string()),
-            ("state".to_string(), "passed".to_string()),
-        ],
-    )?;
+    gitee_api_approve_pull_request_test(&repo, &access_token, request.number)?;
 
     inspect_repository(&repo_path)
 }
@@ -109,14 +96,7 @@ pub(crate) fn reset_gitee_pull_request_review(
     let repo = require_gitee_repository(&repo_path)?;
     let access_token = require_access_token(&request.access_token)?;
 
-    gitee_post(
-        &access_token,
-        &format!(
-            "/repos/{}/{}/pulls/{}/review/reset",
-            repo.owner, repo.repo, request.number
-        ),
-        Vec::new(),
-    )?;
+    gitee_api_reset_pull_request_review(&repo, &access_token, request.number)?;
 
     inspect_repository(&repo_path)
 }
@@ -129,16 +109,53 @@ pub(crate) fn reset_gitee_pull_request_test(
     let repo = require_gitee_repository(&repo_path)?;
     let access_token = require_access_token(&request.access_token)?;
 
-    gitee_post(
-        &access_token,
-        &format!(
-            "/repos/{}/{}/pulls/{}/test/reset",
-            repo.owner, repo.repo, request.number
-        ),
-        Vec::new(),
-    )?;
+    gitee_api_reset_pull_request_test(&repo, &access_token, request.number)?;
 
     inspect_repository(&repo_path)
+}
+
+pub(crate) fn list_gitee_pull_request_commits(
+    repo: &GiteeRepositoryInfo,
+    access_token: &str,
+    number: i64,
+) -> Result<Vec<PullRequestCommitInfo>, String> {
+    let response = gitee_api_list_pull_request_commits(repo, access_token, number)?;
+
+    response
+        .as_array()
+        .ok_or_else(|| "Unexpected Gitee pull request commit response.".to_string())?
+        .iter()
+        .map(map_pull_request_commit)
+        .collect()
+}
+
+pub(crate) fn list_gitee_pull_request_files(
+    repo: &GiteeRepositoryInfo,
+    access_token: &str,
+    number: i64,
+) -> Result<Vec<PullRequestChangedFileInfo>, String> {
+    let response = gitee_api_list_pull_request_files(repo, access_token, number)?;
+
+    response
+        .as_array()
+        .ok_or_else(|| "Unexpected Gitee pull request file response.".to_string())?
+        .iter()
+        .map(map_pull_request_file)
+        .collect()
+}
+
+pub(crate) fn list_gitee_repository_members(
+    repo: &GiteeRepositoryInfo,
+    access_token: &str,
+) -> Result<Vec<RepositoryMemberInfo>, String> {
+    let response = list_repository_subscribers(repo, access_token)?;
+
+    response
+        .as_array()
+        .ok_or_else(|| "Unexpected Gitee repository member response.".to_string())?
+        .iter()
+        .map(map_repository_member)
+        .collect()
 }
 
 /// Gitee 代码评审准备流程。
@@ -274,16 +291,94 @@ fn map_gitee_pull_request(
     })
 }
 
+fn map_pull_request_commit(value: &Value) -> Result<PullRequestCommitInfo, String> {
+    let sha = first_string(value, &[&["sha"], &["id"]])
+        .ok_or_else(|| "Pull request commit is missing its sha.".to_string())?;
+
+    Ok(PullRequestCommitInfo {
+        sha,
+        message: first_string(value, &[&["commit", "message"], &["message"], &["title"]]),
+        author: first_string(
+            value,
+            &[
+                &["author", "login"],
+                &["author", "name"],
+                &["author", "nickname"],
+                &["commit", "author", "name"],
+                &["user", "name"],
+                &["user", "login"],
+            ],
+        ),
+        authored_at: first_string(
+            value,
+            &[
+                &["commit", "author", "date"],
+                &["created_at"],
+                &["authored_date"],
+                &["timestamp"],
+            ],
+        ),
+        web_url: first_string(value, &[&["html_url"], &["url"], &["web_url"]]),
+    })
+}
+
+fn map_pull_request_file(value: &Value) -> Result<PullRequestChangedFileInfo, String> {
+    let filename = first_string(value, &[&["filename"], &["path"], &["new_path"], &["old_path"]])
+        .ok_or_else(|| "Pull request file entry is missing its filename.".to_string())?;
+
+    Ok(PullRequestChangedFileInfo {
+        filename,
+        status: first_string(value, &[&["status"], &["type"]]),
+        additions: first_i64(value, &[&["additions"]]),
+        deletions: first_i64(value, &[&["deletions"]]),
+        changes: first_i64(value, &[&["changes"]]),
+        blob_url: first_string(value, &[&["blob_url"], &["html_url"]]),
+        raw_url: first_string(value, &[&["raw_url"], &["contents_url"]]),
+        patch: first_string(value, &[&["patch"]]),
+    })
+}
+
+fn map_repository_member(value: &Value) -> Result<RepositoryMemberInfo, String> {
+    let username = first_string(
+        value,
+        &[
+            &["login"],
+            &["name"],
+            &["nickname"],
+            &["user", "login"],
+            &["user", "name"],
+        ],
+    )
+    .ok_or_else(|| "Repository member entry is missing its identity.".to_string())?;
+    let display_name = first_string(
+        value,
+        &[
+            &["name"],
+            &["nickname"],
+            &["login"],
+            &["user", "name"],
+            &["user", "login"],
+        ],
+    )
+    .unwrap_or_else(|| username.clone());
+
+    Ok(RepositoryMemberInfo {
+        username,
+        display_name,
+        avatar_url: first_string(value, &[&["avatar_url"], &["user", "avatar_url"]]),
+        profile_url: first_string(value, &[&["html_url"], &["url"], &["web_url"]]),
+        role_name: first_string(value, &[&["role_name"], &["membership_type"]])
+            .or_else(|| Some("subscriber".to_string())),
+        permission: first_string(value, &[&["permission"]]),
+    })
+}
+
 fn fetch_gitee_pull_request_value(
     repo: &GiteeRepositoryInfo,
     access_token: &str,
     number: i64,
 ) -> Result<Value, String> {
-    gitee_get(
-        access_token,
-        &format!("/repos/{}/{}/pulls/{}", repo.owner, repo.repo, number),
-        Vec::new(),
-    )
+    gitee_api_get_pull_request(repo, access_token, number)
 }
 
 fn cleanup_gitee_code_review(
@@ -294,42 +389,4 @@ fn cleanup_gitee_code_review(
     let base = extract_pull_request_branch_ref(response, "base")?;
     let head = extract_pull_request_branch_ref(response, "head")?;
     cleanup_code_review_worktree_for_refs(repo_path, pr_number, &base.branch, &head.branch)
-}
-
-fn gitee_get(
-    access_token: &str,
-    path: &str,
-    query: Vec<(String, String)>,
-) -> Result<Value, String> {
-    let client = gitee_client()?;
-    let mut full_query = vec![("access_token".to_string(), access_token.to_string())];
-    full_query.extend(query);
-
-    let response = client
-        .get(format!("https://gitee.com/api/v5{}", path))
-        .query(&full_query)
-        .send()
-        .map_err(|error| format!("Failed to reach Gitee API: {error}"))?;
-
-    parse_json_response(response)
-}
-
-fn gitee_post(
-    access_token: &str,
-    path: &str,
-    form: Vec<(String, String)>,
-) -> Result<Value, String> {
-    let client = gitee_client()?;
-    let response = client
-        .post(format!("https://gitee.com/api/v5{}", path))
-        .query(&[("access_token", access_token)])
-        .form(&form)
-        .send()
-        .map_err(|error| format!("Failed to reach Gitee API: {error}"))?;
-
-    parse_json_response(response)
-}
-
-fn gitee_client() -> Result<reqwest::blocking::Client, String> {
-    api_client("Gitee")
 }

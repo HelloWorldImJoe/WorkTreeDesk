@@ -33,13 +33,13 @@ pub(crate) struct OpenUrlRequest {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct GiteePullRequestListRequest {
+pub(crate) struct ReviewProviderListRequest {
     pub(crate) repo_path: String,
     pub(crate) access_token: String,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct GiteePullRequestDetailRequest {
+pub(crate) struct ReviewProviderPullRequestRequest {
     pub(crate) repo_path: String,
     pub(crate) access_token: String,
     pub(crate) number: i64,
@@ -50,15 +50,20 @@ pub(crate) struct GiteePullRequestDetailRequest {
 /// 后端会根据 `repo_path` 推导具体 provider 行为，因此请求层只需要携带仓库路径、
 /// 认证信息和目标评审编号即可。
 #[derive(Debug, Deserialize)]
-pub(crate) struct GiteePullRequestActionRequest {
+pub(crate) struct ReviewProviderPullRequestActionRequest {
     pub(crate) repo_path: String,
     pub(crate) access_token: String,
     pub(crate) number: i64,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct GiteeCodeReviewRequest {
+pub(crate) struct ReviewProviderCodeReviewRequest {
     pub(crate) repo_path: String,
     pub(crate) access_token: String,
     pub(crate) number: i64,
 }
+
+pub(crate) type GiteePullRequestListRequest = ReviewProviderListRequest;
+pub(crate) type GiteePullRequestDetailRequest = ReviewProviderPullRequestRequest;
+pub(crate) type GiteePullRequestActionRequest = ReviewProviderPullRequestActionRequest;
+pub(crate) type GiteeCodeReviewRequest = ReviewProviderCodeReviewRequest;

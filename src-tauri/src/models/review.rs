@@ -37,3 +37,34 @@ pub(crate) struct CodeReviewResult {
     pub(crate) review_branch: String,
     pub(crate) web_url: String,
 }
+
+#[derive(Debug, Serialize)]
+pub(crate) struct RepositoryMemberInfo {
+    pub(crate) username: String,
+    pub(crate) display_name: String,
+    pub(crate) avatar_url: Option<String>,
+    pub(crate) profile_url: Option<String>,
+    pub(crate) role_name: Option<String>,
+    pub(crate) permission: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct PullRequestCommitInfo {
+    pub(crate) sha: String,
+    pub(crate) message: Option<String>,
+    pub(crate) author: Option<String>,
+    pub(crate) authored_at: Option<String>,
+    pub(crate) web_url: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct PullRequestChangedFileInfo {
+    pub(crate) filename: String,
+    pub(crate) status: Option<String>,
+    pub(crate) additions: Option<i64>,
+    pub(crate) deletions: Option<i64>,
+    pub(crate) changes: Option<i64>,
+    pub(crate) blob_url: Option<String>,
+    pub(crate) raw_url: Option<String>,
+    pub(crate) patch: Option<String>,
+}

@@ -3,33 +3,35 @@ use std::path::Path;
 
 use crate::{
     models::{
-        CodeReviewResult, GiteePullRequestActionRequest, PullRequestInfo, RepositoryInfo,
+        CodeReviewResult, GiteePullRequestActionRequest, PullRequestChangedFileInfo,
+        PullRequestCommitInfo, PullRequestInfo, RepositoryInfo, RepositoryMemberInfo,
         ReviewProviderInfo,
     },
     repository::inspect_repository,
 };
 
-use super::shared::{
-    api_client, cleanup_code_review_worktree_for_refs, extract_branch_name,
-    extract_pull_request_branch_ref, extract_pull_request_web_url, extract_repo_full_name,
-    first_i64, first_string, parse_json_response_with_label, prepare_provider_code_review,
-    require_provider_access_token,
+use super::{
+    api::github::{
+        approve_pull_request_review as github_api_approve_pull_request_review,
+        get_authenticated_user, get_pull_request as github_api_get_pull_request,
+        get_pull_request_commit_status, list_pull_request_commits as github_api_list_pull_request_commits,
+        list_pull_request_files as github_api_list_pull_request_files,
+        list_pull_request_reviews as github_api_list_pull_request_reviews,
+        list_pull_requests as github_api_list_pull_requests,
+        list_repository_collaborators,
+    },
+    shared::{
+        cleanup_code_review_worktree_for_refs, extract_branch_name,
+        extract_pull_request_branch_ref, extract_pull_request_web_url, extract_repo_full_name,
+        first_i64, first_string, prepare_provider_code_review, require_provider_access_token,
+    },
 };
 
 pub(crate) fn list_github_pull_requests(
     provider: &ReviewProviderInfo,
     access_token: &str,
 ) -> Result<Vec<PullRequestInfo>, String> {
-    let response = github_get(
-        access_token,
-        &format!("/repos/{}/{}/pulls", provider.owner, provider.repo),
-        vec![
-            ("state".to_string(), "open".to_string()),
-            ("sort".to_string(), "updated".to_string()),
-            ("direction".to_string(), "desc".to_string()),
-            ("per_page".to_string(), "100".to_string()),
-        ],
-    )?;
+    let response = github_api_list_pull_requests(provider, access_token)?;
 
     response
         .as_array()
@@ -44,11 +46,7 @@ pub(crate) fn get_github_pull_request_detail(
     access_token: &str,
     number: i64,
 ) -> Result<PullRequestInfo, String> {
-    let response = github_get(
-        access_token,
-        &format!("/repos/{}/{}/pulls/{number}", provider.owner, provider.repo),
-        Vec::new(),
-    )?;
+    let response = github_api_get_pull_request(provider, access_token, number)?;
     let current_login = github_current_user_login(access_token)?;
     let review_status = github_current_user_review_status(provider, access_token, number)?;
     let test_status = github_pull_request_test_status(provider, access_token, &response)?;
@@ -72,11 +70,7 @@ pub(crate) fn approve_github_pull_request_review(
 ) -> Result<RepositoryInfo, String> {
     let access_token = require_provider_access_token(&request.access_token, provider)?;
     let current_login = github_current_user_login(&access_token)?;
-    let pull_request = github_get(
-        &access_token,
-        &format!("/repos/{}/{}/pulls/{}", provider.owner, provider.repo, request.number),
-        Vec::new(),
-    )?;
+    let pull_request = github_api_get_pull_request(provider, &access_token, request.number)?;
     let (review_action_allowed, review_action_blocked_reason) =
         github_review_action_state(&pull_request, current_login.as_deref());
 
@@ -87,15 +81,53 @@ pub(crate) fn approve_github_pull_request_review(
         );
     }
 
-    github_post_json(
-        &access_token,
-        &format!("/repos/{}/{}/pulls/{}/reviews", provider.owner, provider.repo, request.number),
-        serde_json::json!({
-            "event": "APPROVE"
-        }),
-    )?;
+    github_api_approve_pull_request_review(provider, &access_token, request.number)?;
 
     inspect_repository(repo_path)
+}
+
+pub(crate) fn list_github_pull_request_commits(
+    provider: &ReviewProviderInfo,
+    access_token: &str,
+    number: i64,
+) -> Result<Vec<PullRequestCommitInfo>, String> {
+    let response = github_api_list_pull_request_commits(provider, access_token, number)?;
+
+    response
+        .as_array()
+        .ok_or_else(|| "Unexpected GitHub pull request commit response.".to_string())?
+        .iter()
+        .map(map_pull_request_commit)
+        .collect()
+}
+
+pub(crate) fn list_github_pull_request_files(
+    provider: &ReviewProviderInfo,
+    access_token: &str,
+    number: i64,
+) -> Result<Vec<PullRequestChangedFileInfo>, String> {
+    let response = github_api_list_pull_request_files(provider, access_token, number)?;
+
+    response
+        .as_array()
+        .ok_or_else(|| "Unexpected GitHub pull request file response.".to_string())?
+        .iter()
+        .map(map_pull_request_file)
+        .collect()
+}
+
+pub(crate) fn list_github_repository_members(
+    provider: &ReviewProviderInfo,
+    access_token: &str,
+) -> Result<Vec<RepositoryMemberInfo>, String> {
+    let response = list_repository_collaborators(provider, access_token)?;
+
+    response
+        .as_array()
+        .ok_or_else(|| "Unexpected GitHub repository collaborator response.".to_string())?
+        .iter()
+        .map(map_repository_member)
+        .collect()
 }
 
 pub(crate) fn prepare_github_code_review(
@@ -104,11 +136,7 @@ pub(crate) fn prepare_github_code_review(
     access_token: &str,
     number: i64,
 ) -> Result<CodeReviewResult, String> {
-    let response = github_get(
-        access_token,
-        &format!("/repos/{}/{}/pulls/{number}", provider.owner, provider.repo),
-        Vec::new(),
-    )?;
+    let response = github_api_get_pull_request(provider, access_token, number)?;
     let base = extract_pull_request_branch_ref(&response, "base")?;
     let head = extract_pull_request_branch_ref(&response, "head")?;
 
@@ -129,11 +157,7 @@ pub(crate) fn cleanup_github_code_review_worktree(
     access_token: &str,
     number: i64,
 ) -> Result<RepositoryInfo, String> {
-    let response = github_get(
-        access_token,
-        &format!("/repos/{}/{}/pulls/{number}", provider.owner, provider.repo),
-        Vec::new(),
-    )?;
+    let response = github_api_get_pull_request(provider, access_token, number)?;
     let base = extract_pull_request_branch_ref(&response, "base")?;
     let head = extract_pull_request_branch_ref(&response, "head")?;
     cleanup_code_review_worktree_for_refs(repo_path, number, &base.branch, &head.branch)?;
@@ -175,6 +199,107 @@ fn map_github_pull_request(
     })
 }
 
+fn map_pull_request_commit(value: &Value) -> Result<PullRequestCommitInfo, String> {
+    let sha = first_string(value, &[&["sha"], &["id"]])
+        .ok_or_else(|| "Pull request commit is missing its sha.".to_string())?;
+
+    Ok(PullRequestCommitInfo {
+        sha,
+        message: first_string(value, &[&["commit", "message"], &["message"], &["title"]]),
+        author: first_string(
+            value,
+            &[
+                &["author", "login"],
+                &["author", "name"],
+                &["commit", "author", "name"],
+                &["committer", "login"],
+                &["user", "login"],
+                &["user", "name"],
+            ],
+        ),
+        authored_at: first_string(
+            value,
+            &[
+                &["commit", "author", "date"],
+                &["created_at"],
+                &["authored_date"],
+                &["timestamp"],
+            ],
+        ),
+        web_url: first_string(value, &[&["html_url"], &["web_url"], &["url"]]),
+    })
+}
+
+fn map_pull_request_file(value: &Value) -> Result<PullRequestChangedFileInfo, String> {
+    let filename = first_string(value, &[&["filename"], &["path"], &["new_path"], &["old_path"]])
+        .ok_or_else(|| "Pull request file entry is missing its filename.".to_string())?;
+
+    Ok(PullRequestChangedFileInfo {
+        filename,
+        status: first_string(value, &[&["status"], &["type"]]),
+        additions: first_i64(value, &[&["additions"]]),
+        deletions: first_i64(value, &[&["deletions"]]),
+        changes: first_i64(value, &[&["changes"]]),
+        blob_url: first_string(value, &[&["blob_url"]]),
+        raw_url: first_string(value, &[&["raw_url"], &["contents_url"]]),
+        patch: first_string(value, &[&["patch"]]),
+    })
+}
+
+fn map_repository_member(value: &Value) -> Result<RepositoryMemberInfo, String> {
+    let username = first_string(
+        value,
+        &[
+            &["login"],
+            &["name"],
+            &["user", "login"],
+            &["user", "name"],
+        ],
+    )
+    .ok_or_else(|| "Repository member entry is missing its identity.".to_string())?;
+    let display_name = first_string(
+        value,
+        &[
+            &["name"],
+            &["nickname"],
+            &["login"],
+            &["user", "name"],
+            &["user", "login"],
+        ],
+    )
+    .unwrap_or_else(|| username.clone());
+
+    Ok(RepositoryMemberInfo {
+        username,
+        display_name,
+        avatar_url: first_string(value, &[&["avatar_url"], &["user", "avatar_url"]]),
+        profile_url: first_string(value, &[&["html_url"], &["web_url"], &["url"]]),
+        role_name: first_string(value, &[&["role_name"], &["permission"]]),
+        permission: extract_github_permission(value),
+    })
+}
+
+fn extract_github_permission(value: &Value) -> Option<String> {
+    if let Some(permission) = first_string(value, &[&["permission"]]) {
+        return Some(permission);
+    }
+
+    let permissions = value.get("permissions")?;
+    for (field, label) in [
+        ("admin", "admin"),
+        ("maintain", "maintain"),
+        ("push", "push"),
+        ("triage", "triage"),
+        ("pull", "pull"),
+    ] {
+        if permissions.get(field).and_then(Value::as_bool) == Some(true) {
+            return Some(label.to_string());
+        }
+    }
+
+    None
+}
+
 fn github_current_user_review_status(
     provider: &ReviewProviderInfo,
     access_token: &str,
@@ -185,11 +310,7 @@ fn github_current_user_review_status(
         return Ok(None);
     }
 
-    let reviews = github_get(
-        access_token,
-        &format!("/repos/{}/{}/pulls/{number}/reviews", provider.owner, provider.repo),
-        vec![("per_page".to_string(), "100".to_string())],
-    )?;
+    let reviews = github_api_list_pull_request_reviews(provider, access_token, number)?;
 
     let items = match reviews.as_array() {
         Some(items) => items,
@@ -206,7 +327,7 @@ fn github_current_user_review_status(
 }
 
 fn github_current_user_login(access_token: &str) -> Result<Option<String>, String> {
-    let user = github_get(access_token, "/user", Vec::new())?;
+    let user = get_authenticated_user(access_token)?;
     Ok(first_string(&user, &[&["login"]]))
 }
 
@@ -242,41 +363,7 @@ fn github_pull_request_test_status(
         Some(sha) => sha,
         None => return Ok(None),
     };
-    let status = github_get(
-        access_token,
-        &format!("/repos/{}/{}/commits/{sha}/status", provider.owner, provider.repo),
-        Vec::new(),
-    )?;
+    let status = get_pull_request_commit_status(provider, access_token, &sha)?;
 
     Ok(first_string(&status, &[&["state"]]).map(|state| state.to_lowercase()))
-}
-
-fn github_get(
-    access_token: &str,
-    path: &str,
-    query: Vec<(String, String)>,
-) -> Result<Value, String> {
-    let client = api_client("GitHub")?;
-    let response = client
-        .get(format!("https://api.github.com{path}"))
-        .bearer_auth(access_token)
-        .header("Accept", "application/vnd.github+json")
-        .query(&query)
-        .send()
-        .map_err(|error| format!("Failed to reach GitHub API: {error}"))?;
-
-    parse_json_response_with_label("GitHub", response)
-}
-
-fn github_post_json(access_token: &str, path: &str, body: Value) -> Result<Value, String> {
-    let client = api_client("GitHub")?;
-    let response = client
-        .post(format!("https://api.github.com{path}"))
-        .bearer_auth(access_token)
-        .header("Accept", "application/vnd.github+json")
-        .json(&body)
-        .send()
-        .map_err(|error| format!("Failed to reach GitHub API: {error}"))?;
-
-    parse_json_response_with_label("GitHub", response)
 }

@@ -2,8 +2,9 @@ use crate::{
     common::expand_home,
     models::{
         CodeReviewResult, GiteeCodeReviewRequest, GiteePullRequestActionRequest,
-        GiteePullRequestDetailRequest, GiteePullRequestListRequest, PullRequestInfo,
-        RepositoryInfo, ReviewProviderKind,
+        GiteePullRequestDetailRequest, GiteePullRequestListRequest, PullRequestChangedFileInfo,
+        PullRequestCommitInfo, PullRequestInfo, RepositoryInfo, RepositoryMemberInfo,
+        ReviewProviderKind, ReviewProviderListRequest, ReviewProviderPullRequestRequest,
     },
     provider::require_review_provider,
 };
@@ -113,6 +114,70 @@ pub(crate) fn reset_pull_request_test(
             "{} does not expose a supported manual test reset API for this workflow.",
             provider.display_name
         )),
+    }
+}
+
+#[tauri::command]
+pub(crate) fn list_pull_request_commits(
+    request: ReviewProviderPullRequestRequest,
+) -> Result<Vec<PullRequestCommitInfo>, String> {
+    let repo_path = expand_home(&request.repo_path)?;
+    let provider = require_review_provider(&repo_path)?;
+    let access_token = require_provider_access_token(&request.access_token, &provider)?;
+
+    match provider.kind {
+        ReviewProviderKind::Gitee => {
+            gitee::list_gitee_pull_request_commits(&provider, &access_token, request.number)
+        }
+        ReviewProviderKind::Github => {
+            github::list_github_pull_request_commits(&provider, &access_token, request.number)
+        }
+        ReviewProviderKind::Gitlab => Err(
+            "GitLab commit list encapsulation is not implemented for this command yet."
+                .to_string(),
+        ),
+    }
+}
+
+#[tauri::command]
+pub(crate) fn list_pull_request_files(
+    request: ReviewProviderPullRequestRequest,
+) -> Result<Vec<PullRequestChangedFileInfo>, String> {
+    let repo_path = expand_home(&request.repo_path)?;
+    let provider = require_review_provider(&repo_path)?;
+    let access_token = require_provider_access_token(&request.access_token, &provider)?;
+
+    match provider.kind {
+        ReviewProviderKind::Gitee => {
+            gitee::list_gitee_pull_request_files(&provider, &access_token, request.number)
+        }
+        ReviewProviderKind::Github => {
+            github::list_github_pull_request_files(&provider, &access_token, request.number)
+        }
+        ReviewProviderKind::Gitlab => Err(
+            "GitLab changed-file encapsulation is not implemented for this command yet."
+                .to_string(),
+        ),
+    }
+}
+
+#[tauri::command]
+pub(crate) fn list_repository_members(
+    request: ReviewProviderListRequest,
+) -> Result<Vec<RepositoryMemberInfo>, String> {
+    let repo_path = expand_home(&request.repo_path)?;
+    let provider = require_review_provider(&repo_path)?;
+    let access_token = require_provider_access_token(&request.access_token, &provider)?;
+
+    match provider.kind {
+        ReviewProviderKind::Gitee => gitee::list_gitee_repository_members(&provider, &access_token),
+        ReviewProviderKind::Github => {
+            github::list_github_repository_members(&provider, &access_token)
+        }
+        ReviewProviderKind::Gitlab => Err(
+            "GitLab repository member encapsulation is not implemented for this command yet."
+                .to_string(),
+        ),
     }
 }
 

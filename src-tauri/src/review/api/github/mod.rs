@@ -1,0 +1,10 @@
+mod client;
+mod pull_requests;
+mod repositories;
+
+pub(crate) use pull_requests::{
+    approve_pull_request_review, get_pull_request, get_pull_request_commit_status,
+    list_pull_request_commits, list_pull_request_files, list_pull_request_reviews,
+    list_pull_requests,
+};
+pub(crate) use repositories::{get_authenticated_user, list_repository_collaborators};
