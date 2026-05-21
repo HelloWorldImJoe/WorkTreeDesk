@@ -107,6 +107,7 @@ jobs:
     name: Publish Updater Manifest
     runs-on: ubuntu-22.04
     needs: publish-tauri
+    if: ${{ always() && needs.publish-tauri.result != 'cancelled' }}
 
     steps:
       - name: Checkout repository

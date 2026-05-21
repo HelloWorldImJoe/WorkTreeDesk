@@ -98,6 +98,7 @@ pub(crate) fn parse_review_provider_remote(url: &str) -> Option<ParsedReviewProv
     })
 }
 
+#[cfg(test)]
 pub(crate) fn gitee_https_path(url: &str) -> Option<&str> {
     let trimmed = url.trim().trim_end_matches('/');
     let remainder = if let Some(rest) = trimmed.strip_prefix("https://") {
@@ -110,10 +111,6 @@ pub(crate) fn gitee_https_path(url: &str) -> Option<&str> {
 
     let without_userinfo = remainder.rsplit_once('@').map(|(_, rest)| rest).unwrap_or(remainder);
     without_userinfo.strip_prefix("gitee.com/")
-}
-
-pub(crate) fn is_gitee_https_url(url: &str) -> bool {
-    gitee_https_path(url).is_some()
 }
 
 pub(crate) fn is_provider_https_url(url: &str, provider: &ReviewProviderInfo) -> bool {

@@ -1,14 +1,18 @@
-use std::{collections::BTreeMap, path::{Path, PathBuf}};
+use std::{collections::BTreeMap, path::Path};
 
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
-    common::{clean_optional, clean_optional_string, expand_home, normalize_git_path, repository_name},
-    git::{git_stdout, paths_equal, run_git},
-    models::{AddWorktreeRequest, BranchInfo, RepositoryInfo, RemoveWorktreeRequest, ScanResult, WorktreeInfo},
+    common::{clean_optional, expand_home, normalize_git_path, repository_name},
+    git::git_stdout,
+    models::{BranchInfo, RepositoryInfo, ScanResult, WorktreeInfo},
     provider::detect_review_provider,
 };
 
+/// 扫描目录下的 Git 仓库，并把同一 common dir 的 worktree 聚合成一个仓库条目。
+///
+/// 前端工作区页需要的是“仓库视角”的列表，而不是把每个 worktree 当成独立仓库。
+/// 因此这里先递归发现候选目录，再通过 common_dir 去重，保证 UI 展示稳定。
 #[tauri::command]
 pub(crate) fn scan_directory(root: String) -> Result<ScanResult, String> {
     let root_path = expand_home(&root)?;
@@ -47,81 +51,6 @@ pub(crate) fn scan_directory(root: String) -> Result<ScanResult, String> {
 }
 
 #[tauri::command]
-pub(crate) fn add_worktree(request: AddWorktreeRequest) -> Result<RepositoryInfo, String> {
-    let repo_path = expand_home(&request.repo_path)?;
-    let worktree_path = expand_home(&request.worktree_path)?;
-    let worktree_arg = worktree_path.to_string_lossy().to_string();
-
-    let mut args = vec!["worktree".to_string(), "add".to_string()];
-
-    let branch = clean_optional_string(&request.branch);
-    if request.create_branch {
-        if let Some(branch) = branch {
-            args.push("-b".to_string());
-            args.push(branch);
-        }
-        args.push(worktree_arg);
-    } else {
-        args.push(worktree_arg);
-        if let Some(reference) = branch {
-            args.push(reference);
-        }
-    }
-
-    run_git(&repo_path, &args)?;
-    inspect_repository(&repo_path)
-}
-
-#[tauri::command]
-pub(crate) fn remove_worktree(request: RemoveWorktreeRequest) -> Result<RepositoryInfo, String> {
-    let repo_path = expand_home(&request.repo_path)?;
-    let worktree_path = expand_home(&request.worktree_path)?;
-    let command_repo_path = if paths_equal(&repo_path, &worktree_path) {
-        let porcelain = git_stdout(&repo_path, &["worktree", "list", "--porcelain"])?;
-        parse_worktrees(&porcelain)
-            .into_iter()
-            .map(|worktree| PathBuf::from(worktree.path))
-            .find(|candidate| !paths_equal(candidate, &worktree_path))
-            .ok_or_else(|| "At least one worktree must remain.".to_string())?
-    } else {
-        repo_path.clone()
-    };
-
-    let mut args = vec![
-        "worktree".to_string(),
-        "remove".to_string(),
-        worktree_path.to_string_lossy().to_string(),
-    ];
-
-    if request.force {
-        args.push("--force".to_string());
-    }
-
-    run_git(&command_repo_path, &args)?;
-    inspect_repository(&command_repo_path)
-}
-
-#[tauri::command]
-pub(crate) fn prune_worktrees(repo_path: String) -> Result<RepositoryInfo, String> {
-    let repo_path = expand_home(&repo_path)?;
-    run_git(
-        &repo_path,
-        &[
-            "worktree".to_string(),
-            "prune".to_string(),
-            "--verbose".to_string(),
-        ],
-    )?;
-    inspect_repository(&repo_path)
-}
-
-#[tauri::command]
-pub(crate) fn refresh_repository(repo_path: String) -> Result<RepositoryInfo, String> {
-    let repo_path = expand_home(&repo_path)?;
-    inspect_repository(&repo_path)
-}
-
-#[tauri::command]
 pub(crate) fn list_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
     let repo_path = expand_home(&repo_path)?;
     let output = git_stdout(
@@ -147,6 +76,10 @@ pub(crate) fn list_branches(repo_path: String) -> Result<Vec<BranchInfo>, String
     Ok(branches)
 }
 
+/// 读取 Git 元数据并组装前端需要的仓库快照。
+///
+/// 这里集中做一次 provider 探测、当前分支读取和 worktree 解析，避免其他命令
+/// 在成功执行后还要分别重复拼装这些字段。
 pub(crate) fn inspect_repository(path: &Path) -> Result<RepositoryInfo, String> {
     let root = git_stdout(path, &["rev-parse", "--show-toplevel"])?;
     let common_dir_raw = git_stdout(path, &["rev-parse", "--git-common-dir"])?;
@@ -171,6 +104,10 @@ pub(crate) fn inspect_repository(path: &Path) -> Result<RepositoryInfo, String> 
     })
 }
 
+/// 解析 `git worktree list --porcelain` 输出。
+///
+/// 使用 git 的 porcelain 格式是为了避免依赖人类可读输出的列宽或语言环境，字段名
+/// 与 WorktreeInfo 一一对应，后续命令也能直接复用这个解析结果。
 pub(crate) fn parse_worktrees(output: &str) -> Vec<WorktreeInfo> {
     let mut worktrees = Vec::new();
     let mut current: Option<WorktreeInfo> = None;
