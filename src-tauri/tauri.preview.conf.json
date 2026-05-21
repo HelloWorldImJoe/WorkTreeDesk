@@ -12,7 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "Worktree Desk Preview"
+        "label": "main",
+        "title": "Worktree Desk Preview",
+        "width": 1326,
+        "height": 1037,
+        "minWidth": 720,
+        "minHeight": 520
       }
     ]
   }
