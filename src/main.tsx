@@ -26,8 +26,6 @@ import {
   Info,
   Lightbulb,
   Loader2,
-  Monitor,
-  Moon,
   Play,
   Plus,
   RefreshCcw,
@@ -35,7 +33,6 @@ import {
   Settings,
   Smartphone,
   Sparkles,
-  Sun,
   Terminal,
   Trash2,
   X,
@@ -132,7 +129,8 @@ type PullRequestCacheEntry = {
 };
 
 type ProviderTokenMap = Partial<Record<ReviewProviderKind, string>>;
-type RepoProviderTokenMap = Record<string, string>;
+type GiteeEdition = "standard" | "enterprise";
+type RepoGiteeEditionMap = Record<string, GiteeEdition>;
 
 type AppView = "workspace" | "reviews";
 
@@ -161,7 +159,8 @@ const EDITOR_MAP_KEY = "worktree-desk.editorMap";
 const HIDDEN_REPO_IDS_KEY = "worktree-desk.hiddenRepoIds";
 const GITEE_TOKEN_KEY = "worktree-desk.giteeToken";
 const PROVIDER_TOKENS_KEY = "worktree-desk.providerTokens";
-const REPO_PROVIDER_TOKENS_KEY = "worktree-desk.repoProviderTokens";
+const REPO_GITEE_EDITIONS_KEY = "worktree-desk.repoGiteeEditions";
+const PULL_REQUEST_CACHE_KEY = "worktree-desk.pullRequestCache";
 const REVIEW_CLEANUP_PREFERENCE_KEY = "worktree-desk.reviewCleanupPreference";
 const REVIEW_WINDOW_REPO_KEY = "worktree-desk.reviewWindowRepo";
 const MAIN_WINDOW_LABEL = "main";
@@ -356,51 +355,46 @@ function saveProviderTokens(tokens: ProviderTokenMap) {
   } catch {}
 }
 
-function loadRepoProviderTokens(): RepoProviderTokenMap {
+function loadRepoGiteeEditions(): RepoGiteeEditionMap {
   try {
-    const raw = localStorage.getItem(REPO_PROVIDER_TOKENS_KEY);
+    const raw = localStorage.getItem(REPO_GITEE_EDITIONS_KEY);
     if (!raw) return {};
+
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return {};
 
     return Object.fromEntries(
-      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string"),
+      Object.entries(parsed).filter(
+        (entry): entry is [string, GiteeEdition] =>
+          typeof entry[0] === "string" && (entry[1] === "standard" || entry[1] === "enterprise"),
+      ),
     );
   } catch {
     return {};
   }
 }
 
-function saveRepoProviderTokens(tokens: RepoProviderTokenMap) {
+function saveRepoGiteeEditions(editions: RepoGiteeEditionMap) {
   try {
-    localStorage.setItem(REPO_PROVIDER_TOKENS_KEY, JSON.stringify(tokens));
+    localStorage.setItem(REPO_GITEE_EDITIONS_KEY, JSON.stringify(editions));
   } catch {}
-}
-
-function getRepoProviderTokenKey(repoCommonDir: string, kind: ReviewProviderKind) {
-  return `${repoCommonDir}::${kind}`;
 }
 
 function getEffectiveProviderToken(
   repo: RepositoryInfo | null | undefined,
   providerTokens: ProviderTokenMap,
-  repoProviderTokens: RepoProviderTokenMap,
 ) {
   const provider = repo?.provider;
-  if (!provider || !repo?.common_dir) return "";
-
-  const repoOverride = repoProviderTokens[getRepoProviderTokenKey(repo.common_dir, provider.kind)]?.trim();
-  if (repoOverride) return repoOverride;
+  if (!provider) return "";
   return providerTokens[provider.kind]?.trim() || "";
 }
 
-function getRepoProviderTokenOverride(
+function getRepoGiteeEdition(
   repo: RepositoryInfo | null | undefined,
-  repoProviderTokens: RepoProviderTokenMap,
-) {
-  const provider = repo?.provider;
-  if (!provider || !repo?.common_dir) return "";
-  return repoProviderTokens[getRepoProviderTokenKey(repo.common_dir, provider.kind)] || "";
+  repoGiteeEditions: RepoGiteeEditionMap,
+): GiteeEdition {
+  if (!repo?.common_dir || repo.provider?.kind !== "gitee") return "standard";
+  return repoGiteeEditions[repo.common_dir] || "standard";
 }
 
 function supportsCapability(
@@ -408,6 +402,107 @@ function supportsCapability(
   capability: keyof ReviewProviderCapabilities,
 ) {
   return Boolean(provider?.capabilities?.[capability]);
+}
+
+function getSystemTheme() {
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(theme: "light" | "dark") {
+  document.documentElement.setAttribute("data-theme", theme);
+}
+
+function buildGiteeRepoWebUrl(provider: ReviewProviderInfo, edition: GiteeEdition) {
+  if (edition === "enterprise") {
+    const tenant = provider.owner.split("/")[0] || provider.owner;
+    if (tenant) {
+      return `https://e.gitee.com/${tenant}/repos/${provider.full_name}`;
+    }
+  }
+
+  return `https://gitee.com/${provider.full_name}`;
+}
+
+function resolveProviderRepoWebUrl(
+  provider: ReviewProviderInfo | null | undefined,
+  giteeEdition: GiteeEdition,
+) {
+  if (!provider) return "";
+  if (provider.kind === "gitee") {
+    return buildGiteeRepoWebUrl(provider, giteeEdition);
+  }
+  return provider.web_url;
+}
+
+function resolvePullRequestWebUrl(
+  provider: ReviewProviderInfo | null | undefined,
+  number: number,
+  fallbackUrl: string,
+  giteeEdition: GiteeEdition,
+) {
+  if (!provider) return fallbackUrl;
+  if (provider.kind === "gitee") {
+    return `${buildGiteeRepoWebUrl(provider, giteeEdition)}/pulls/${number}`;
+  }
+  return fallbackUrl;
+}
+
+function isPullRequestInfo(value: unknown): value is PullRequestInfo {
+  return Boolean(
+    value
+      && typeof value === "object"
+      && typeof (value as PullRequestInfo).number === "number"
+      && typeof (value as PullRequestInfo).title === "string",
+  );
+}
+
+function loadPullRequestCacheStore(): Record<string, PullRequestCacheEntry> {
+  try {
+    const raw = localStorage.getItem(PULL_REQUEST_CACHE_KEY);
+    if (!raw) return {};
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([repoRoot, entry]) => {
+        if (!entry || typeof entry !== "object") return [];
+
+        const items = Array.isArray((entry as PullRequestCacheEntry).items)
+          ? (entry as PullRequestCacheEntry).items.filter(isPullRequestInfo)
+          : [];
+        const rawDetails = (entry as PullRequestCacheEntry).details;
+        const details = rawDetails && typeof rawDetails === "object"
+          ? Object.fromEntries(
+              Object.entries(rawDetails).filter((detailEntry): detailEntry is [string, PullRequestInfo] =>
+                isPullRequestInfo(detailEntry[1]),
+              ),
+            )
+          : {};
+        const selectedNumber = typeof (entry as PullRequestCacheEntry).selectedNumber === "number"
+          ? (entry as PullRequestCacheEntry).selectedNumber
+          : null;
+
+        return [[repoRoot, { items, details, selectedNumber } satisfies PullRequestCacheEntry]];
+      }),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function savePullRequestCacheStore(cache: Record<string, PullRequestCacheEntry>) {
+  try {
+    localStorage.setItem(PULL_REQUEST_CACHE_KEY, JSON.stringify(cache));
+  } catch {}
+}
+
+function arePullRequestEqual(left: PullRequestInfo | null | undefined, right: PullRequestInfo | null | undefined) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function arePullRequestListsEqual(left: PullRequestInfo[], right: PullRequestInfo[]) {
+  return left.length === right.length && left.every((item, index) => arePullRequestEqual(item, right[index]));
 }
 function loadReviewWindowRepo() {
   try {
@@ -470,25 +565,6 @@ function setRepoEditor(repoCommonDir: string | null | undefined, editor: string)
   const map = loadEditorMap();
   map[repoCommonDir] = editor;
   saveEditorMap(map);
-}
-
-type Theme = "light" | "dark" | "system";
-
-const THEME_KEY = "worktree-desk.theme";
-
-function loadTheme(): Theme {
-  try {
-    const stored = localStorage.getItem(THEME_KEY);
-    if (stored === "light" || stored === "dark" || stored === "system") return stored;
-  } catch {}
-  return "system";
-}
-
-function applyTheme(theme: Theme) {
-  const resolved = theme === "system"
-    ? (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light")
-    : theme;
-  document.documentElement.setAttribute("data-theme", resolved);
 }
 
 function getAppView(): AppView {
@@ -575,12 +651,13 @@ function App() {
   const { t, locale, setLocale } = useLocale();
   const appView = getAppView();
   const isReviewWindow = appView === "reviews";
-  const [theme, setTheme] = useState<Theme>(loadTheme);
+  const [systemTheme, setSystemTheme] = useState<"light" | "dark">(getSystemTheme);
   const [scanRoot, setScanRoot] = useState(() => localStorage.getItem("worktree-desk.scanRoot") || "~/Documents");
   const [result, setResult] = useState<ScanResult | null>(loadCachedResult);
   const [selectedRepo, setSelectedRepo] = useState<string | null>(() => isReviewWindow ? loadReviewWindowRepo() : null);
   const [hiddenRepoIds, setHiddenRepoIds] = useState(loadHiddenRepoIds);
   const [showHiddenRepos, setShowHiddenRepos] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [editor, setEditor] = useState(() => getRepoEditor(null));
   const [worktreePath, setWorktreePath] = useState("");
   const [branch, setBranch] = useState("");
@@ -593,7 +670,7 @@ function App() {
   const [pendingRemove, setPendingRemove] = useState<WorktreeInfo | null>(null);
   const [pendingCreateBranch, setPendingCreateBranch] = useState<{ branch: string; path: string } | null>(null);
   const [providerTokens, setProviderTokens] = useState<ProviderTokenMap>(loadProviderTokens);
-  const [repoProviderTokens, setRepoProviderTokens] = useState<RepoProviderTokenMap>(loadRepoProviderTokens);
+  const [repoGiteeEditions, setRepoGiteeEditions] = useState<RepoGiteeEditionMap>(loadRepoGiteeEditions);
   const [pullRequests, setPullRequests] = useState<PullRequestInfo[]>([]);
   const [pullRequestsLoading, setPullRequestsLoading] = useState(false);
   const [pullRequestDetailLoading, setPullRequestDetailLoading] = useState(false);
@@ -635,8 +712,8 @@ function App() {
     return pullRequests.find((item) => item.number === selectedPullRequestNumber) ?? null;
   }, [pullRequestDetail, pullRequests, selectedPullRequestNumber]);
   const activeProvider = activeRepo?.provider ?? null;
-  const activeProviderToken = getEffectiveProviderToken(activeRepo, providerTokens, repoProviderTokens);
-  const activeRepoTokenOverride = getRepoProviderTokenOverride(activeRepo, repoProviderTokens);
+  const activeProviderToken = getEffectiveProviderToken(activeRepo, providerTokens);
+  const activeRepoGiteeEdition = getRepoGiteeEdition(activeRepo, repoGiteeEditions);
   const selectedEditor = editorOptions.find((option) => option.value === editor) ?? editorOptions[0];
   const renderEditorIcon = (size: number) => {
     if (selectedEditor.iconSrc) {
@@ -650,7 +727,8 @@ function App() {
   const messageTone = messageState.tone ?? "default";
   const skipNextEditorPersistRef = useRef(false);
   const branchCacheRef = useRef<Record<string, BranchInfo[]>>({});
-  const pullRequestCacheRef = useRef<Record<string, PullRequestCacheEntry>>({});
+  const pullRequestCacheRef = useRef<Record<string, PullRequestCacheEntry>>(loadPullRequestCacheStore());
+  const [, setPullRequestCacheVersion] = useState(0);
   const promptedUpdateVersionRef = useRef(loadPromptedUpdateVersion());
   const updateCheckInFlightRef = useRef(false);
   const pendingManualUpdateCheckRef = useRef(false);
@@ -667,6 +745,11 @@ function App() {
 
   function setLocalizedBusyLabel(key: string, ...args: unknown[]) {
     setBusyLabelState(localizedStatusMessage(key, ...args));
+  }
+
+  function commitPullRequestCache() {
+    savePullRequestCacheStore(pullRequestCacheRef.current);
+    setPullRequestCacheVersion((current) => current + 1);
   }
 
   function rememberPromptedUpdateVersion(version: string) {
@@ -731,6 +814,7 @@ function App() {
       details: current?.details ?? {},
       selectedNumber,
     };
+    commitPullRequestCache();
   }
 
   function rememberPullRequestSelection(repoRoot: string, selectedNumber: number | null) {
@@ -741,6 +825,7 @@ function App() {
       ...current,
       selectedNumber,
     };
+    commitPullRequestCache();
   }
 
   function rememberPullRequestDetail(repoRoot: string, detail: PullRequestInfo) {
@@ -753,6 +838,7 @@ function App() {
       },
       selectedNumber: detail.number,
     };
+    commitPullRequestCache();
   }
 
   function restorePullRequestCache(repoRoot: string, preferredNumber?: number | null) {
@@ -833,22 +919,23 @@ function App() {
   }, [providerTokens]);
 
   useEffect(() => {
-    saveRepoProviderTokens(repoProviderTokens);
-  }, [repoProviderTokens]);
+    saveRepoGiteeEditions(repoGiteeEditions);
+  }, [repoGiteeEditions]);
 
   useEffect(() => {
-    localStorage.setItem(THEME_KEY, theme);
-    applyTheme(theme);
-  }, [theme]);
+    applyTheme(systemTheme);
+  }, [systemTheme]);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onSystemChange = () => {
-      if (theme === "system") applyTheme("system");
+    const onSystemChange = (event: MediaQueryListEvent) => {
+      setSystemTheme(event.matches ? "dark" : "light");
     };
+
+    setSystemTheme(mq.matches ? "dark" : "light");
     mq.addEventListener("change", onSystemChange);
     return () => mq.removeEventListener("change", onSystemChange);
-  }, [theme]);
+  }, []);
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
@@ -860,8 +947,16 @@ function App() {
         setProviderTokens(loadProviderTokens());
       }
 
-      if (event.key === REPO_PROVIDER_TOKENS_KEY) {
-        setRepoProviderTokens(loadRepoProviderTokens());
+      if (event.key === REPO_GITEE_EDITIONS_KEY) {
+        setRepoGiteeEditions(loadRepoGiteeEditions());
+      }
+
+      if (event.key === PULL_REQUEST_CACHE_KEY) {
+        pullRequestCacheRef.current = loadPullRequestCacheStore();
+        setPullRequestCacheVersion((current) => current + 1);
+        if (activeRepo?.root) {
+          restorePullRequestCache(activeRepo.root, selectedPullRequestNumber);
+        }
       }
 
       if (event.key === HIDDEN_REPO_IDS_KEY) {
@@ -880,7 +975,9 @@ function App() {
     const onFocus = () => {
       setResult(loadCachedResult());
       setProviderTokens(loadProviderTokens());
-      setRepoProviderTokens(loadRepoProviderTokens());
+      setRepoGiteeEditions(loadRepoGiteeEditions());
+      pullRequestCacheRef.current = loadPullRequestCacheStore();
+      setPullRequestCacheVersion((current) => current + 1);
       setHiddenRepoIds(loadHiddenRepoIds());
       promptedUpdateVersionRef.current = loadPromptedUpdateVersion();
       if (isReviewWindow) {
@@ -1052,11 +1149,32 @@ function App() {
     const cachedPullRequests = pullRequestCacheRef.current[activeRepo.root];
     if (!isReviewWindow) {
       if (!restored) clearPullRequestView();
+      void loadPullRequests(null, {
+        force: true,
+        background: true,
+        suppressErrors: true,
+        repo: activeRepo,
+        provider: activeProvider,
+        accessToken: activeProviderToken.trim(),
+      });
       return;
     }
 
-    if (!restored || (cachedPullRequests?.items.length ?? 0) === 0) {
-      void loadPullRequests(null, { force: true });
+    if (restored && (cachedPullRequests?.items.length ?? 0) > 0) {
+      void loadPullRequests(null, {
+        force: true,
+        background: true,
+        repo: activeRepo,
+        provider: activeProvider,
+        accessToken: activeProviderToken.trim(),
+      });
+    } else {
+      void loadPullRequests(null, {
+        force: true,
+        repo: activeRepo,
+        provider: activeProvider,
+        accessToken: activeProviderToken.trim(),
+      });
     }
   }, [activeRepo?.root, activeProvider?.kind, activeProvider?.full_name, activeProviderToken, isReviewWindow]);
 
@@ -1207,76 +1325,149 @@ function App() {
 
   async function loadPullRequests(
     preferredNumber = selectedPullRequestNumber,
-    options?: { force?: boolean },
+    options?: {
+      force?: boolean;
+      background?: boolean;
+      suppressErrors?: boolean;
+      repo?: RepositoryInfo | null;
+      provider?: ReviewProviderInfo | null;
+      accessToken?: string;
+    },
   ) {
-    if (!activeProvider || !activeProviderToken.trim()) return;
+    const repo = options?.repo ?? activeRepo;
+    const provider = options?.provider ?? activeProvider;
+    const accessToken = options?.accessToken ?? activeProviderToken.trim();
+    if (!repo || !provider || !accessToken) return;
 
-    const repoRoot = activeRepo.root;
+    const repoRoot = repo.root;
     if (!options?.force && restorePullRequestCache(repoRoot, preferredNumber)) {
       return;
     }
 
-    setPullRequestsLoading(true);
+    const isCurrentRepo = repoRoot === activeRepo?.root;
+    if (!options?.background && isCurrentRepo) {
+      setPullRequestsLoading(true);
+    }
+
     try {
       const items = await invoke<PullRequestInfo[]>("list_pull_requests", {
         request: {
-          repo_path: activeRepo.root,
-          access_token: activeProviderToken.trim(),
+          repo_path: repo.root,
+          access_token: accessToken,
         },
       });
-      setPullRequests(items);
 
       const nextNumber = preferredNumber && items.some((item) => item.number === preferredNumber)
         ? preferredNumber
         : items[0]?.number ?? null;
+      const previousEntry = pullRequestCacheRef.current[repoRoot];
+      const listChanged = !previousEntry
+        || !arePullRequestListsEqual(previousEntry.items, items)
+        || previousEntry.selectedNumber !== nextNumber;
 
-      rememberPullRequestItems(repoRoot, items, nextNumber);
-      setSelectedPullRequestNumber(nextNumber);
+      if (listChanged) {
+        rememberPullRequestItems(repoRoot, items, nextNumber);
+      }
+
+      if (isCurrentRepo && (!options?.background || listChanged)) {
+        setPullRequests(items);
+        setSelectedPullRequestNumber(nextNumber);
+        if (nextNumber == null) {
+          setPullRequestDetail(null);
+        }
+      }
+
       if (nextNumber != null) {
-        rememberPullRequestSelection(repoRoot, nextNumber);
-        await loadPullRequestDetail(nextNumber, { force: options?.force });
-      } else {
+        if (isReviewWindow && isCurrentRepo) {
+          await loadPullRequestDetail(nextNumber, {
+            force: options?.force || listChanged,
+            background: options?.background,
+            suppressErrors: options?.suppressErrors,
+            repo,
+            provider,
+            accessToken,
+          });
+        } else {
+          rememberPullRequestSelection(repoRoot, nextNumber);
+        }
+      } else if (isCurrentRepo && !options?.background) {
         setPullRequestDetail(null);
       }
     } catch (error) {
-      setPullRequests([]);
-      setPullRequestDetail(null);
-      setSelectedPullRequestNumber(null);
-      setRawMessage(getErrorMessage(error));
+      if (isCurrentRepo && !options?.background) {
+        setPullRequests([]);
+        setPullRequestDetail(null);
+        setSelectedPullRequestNumber(null);
+      }
+      if (!options?.suppressErrors) {
+        setRawMessage(getErrorMessage(error));
+      }
     } finally {
-      setPullRequestsLoading(false);
+      if (!options?.background && isCurrentRepo) {
+        setPullRequestsLoading(false);
+      }
     }
   }
 
-  async function loadPullRequestDetail(number: number, options?: { force?: boolean }) {
-    if (!activeProvider || !activeProviderToken.trim()) return null;
+  async function loadPullRequestDetail(
+    number: number,
+    options?: {
+      force?: boolean;
+      background?: boolean;
+      suppressErrors?: boolean;
+      repo?: RepositoryInfo | null;
+      provider?: ReviewProviderInfo | null;
+      accessToken?: string;
+    },
+  ) {
+    const repo = options?.repo ?? activeRepo;
+    const provider = options?.provider ?? activeProvider;
+    const accessToken = options?.accessToken ?? activeProviderToken.trim();
+    if (!repo || !provider || !accessToken) return null;
 
-    const repoRoot = activeRepo.root;
-    const cachedDetail = !options?.force ? pullRequestCacheRef.current[repoRoot]?.details[number] : null;
+    const repoRoot = repo.root;
+    const cachedDetail = !options?.force && !options?.background ? pullRequestCacheRef.current[repoRoot]?.details[number] : null;
     if (cachedDetail) {
       rememberPullRequestSelection(repoRoot, number);
       setPullRequestDetail(cachedDetail);
       return cachedDetail;
     }
 
-    setPullRequestDetailLoading(true);
+    const isCurrentRepo = repoRoot === activeRepo?.root;
+    if (!options?.background && isCurrentRepo) {
+      setPullRequestDetailLoading(true);
+    }
+
     try {
       const detail = await invoke<PullRequestInfo>("get_pull_request_detail", {
         request: {
-          repo_path: activeRepo.root,
-          access_token: activeProviderToken.trim(),
+          repo_path: repo.root,
+          access_token: accessToken,
           number,
         },
       });
-      rememberPullRequestDetail(repoRoot, detail);
-      setPullRequestDetail(detail);
+      const previousDetail = pullRequestCacheRef.current[repoRoot]?.details[number] ?? null;
+      const detailChanged = !arePullRequestEqual(previousDetail, detail);
+      if (detailChanged) {
+        rememberPullRequestDetail(repoRoot, detail);
+      }
+
+      if (isCurrentRepo && (!options?.background || detailChanged)) {
+        setPullRequestDetail(detail);
+      }
       return detail;
     } catch (error) {
-      setPullRequestDetail(null);
-      setRawMessage(getErrorMessage(error));
+      if (isCurrentRepo && !options?.background) {
+        setPullRequestDetail(null);
+      }
+      if (!options?.suppressErrors) {
+        setRawMessage(getErrorMessage(error));
+      }
       return null;
     } finally {
-      setPullRequestDetailLoading(false);
+      if (!options?.background && isCurrentRepo) {
+        setPullRequestDetailLoading(false);
+      }
     }
   }
 
@@ -1716,29 +1907,20 @@ function App() {
     setSelectedRepo(updated.common_dir);
   }
 
-  function updateActiveProviderGlobalToken(token: string) {
-    if (!activeProvider) return;
+  function updateProviderGlobalToken(kind: ReviewProviderKind, token: string) {
     setProviderTokens((current) => ({
       ...current,
-      [activeProvider.kind]: token,
+      [kind]: token,
     }));
   }
 
-  function updateActiveRepoTokenOverride(token: string) {
-    if (!activeProvider || !activeRepo?.common_dir) return;
-    const tokenKey = getRepoProviderTokenKey(activeRepo.common_dir, activeProvider.kind);
-    setRepoProviderTokens((current) => {
-      if (!token.trim()) {
-        const next = { ...current };
-        delete next[tokenKey];
-        return next;
-      }
+  function updateActiveRepoGiteeEdition(edition: GiteeEdition) {
+    if (!activeRepo?.common_dir || activeProvider?.kind !== "gitee") return;
 
-      return {
-        ...current,
-        [tokenKey]: token,
-      };
-    });
+    setRepoGiteeEditions((current) => ({
+      ...current,
+      [activeRepo.common_dir]: edition,
+    }));
   }
 
   const activeRepoName = activeRepo ? activeRepo.name || basename(activeRepo.root) : t("toolbar.noRepo");
@@ -1760,26 +1942,20 @@ function App() {
     return t("card.removeTitle");
   }
 
-  const hasCachedPullRequests = activeRepo ? Boolean(pullRequestCacheRef.current[activeRepo.root]) : false;
+  const cachedPullRequestCount = activeRepo ? pullRequestCacheRef.current[activeRepo.root]?.items.length : undefined;
   const reviewQueueCount = activeProvider
-    ? (activeProviderToken.trim() ? (hasCachedPullRequests ? String(pullRequests.length) : "--") : "--")
+    ? (activeProviderToken.trim() ? (cachedPullRequestCount != null ? String(cachedPullRequestCount) : "--") : "--")
     : "0";
-  const cleanupPreferenceLabel = reviewCleanupPreference === "delete"
-    ? t("settings.cleanupDelete")
-    : reviewCleanupPreference === "keep"
-      ? t("settings.cleanupKeep")
-      : t("settings.cleanupAsk");
-  const themeOptions: Array<{ value: Theme; label: string; icon: typeof Sun }> = [
-    { value: "light", label: t("theme.light"), icon: Sun },
-    { value: "dark", label: t("theme.dark"), icon: Moon },
-    { value: "system", label: t("theme.system"), icon: Monitor },
-  ];
   const activeProviderName = activeProvider?.display_name || t("review.providerFallback");
   const reviewRepoSummary = activeProvider?.full_name || activeRepo?.root || t("review.noRepo");
   const statusContext = isReviewWindow ? reviewRepoSummary : activeRepoName;
   const statusTask = busyLabel && busyLabel !== message ? busyLabel : "";
   const showReviewStatus = supportsCapability(activeProvider, "approve_review") || pullRequests.some((item) => Boolean(item.review_status));
   const showTestStatus = supportsCapability(activeProvider, "approve_test") || pullRequests.some((item) => Boolean(item.test_status));
+  const activeRepoWebUrl = resolveProviderRepoWebUrl(activeProvider, activeRepoGiteeEdition);
+  const activePullRequestWebUrl = activePullRequest
+    ? resolvePullRequestWebUrl(activeProvider, activePullRequest.number, activePullRequest.web_url, activeRepoGiteeEdition)
+    : "";
 
   return (
     <main className="desktopShell">
@@ -1859,29 +2035,13 @@ function App() {
               </div>
             </div>
 
-            <div className="themeButtons compactThemeButtons">
-              {themeOptions.map((option) => {
-                const Icon = option.icon;
-                return (
-                  <button
-                    key={option.value}
-                    className={`themeButton compact ${theme === option.value ? "active" : ""}`}
-                    onClick={() => setTheme(option.value)}
-                    title={option.label}
-                  >
-                    <Icon size={15} />
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-
             <button
               className="secondaryButton utilityButton"
-              onClick={() => setLocale(locale === "en" ? "zh" : "en")}
-              title={t("lang.switch")}
+              onClick={() => setShowSettings(true)}
+              title={t("settings.open")}
             >
-              {t("lang.switch")}
+              <Settings size={16} />
+              {t("settings.open")}
             </button>
           </div>
         </header>
@@ -1990,7 +2150,7 @@ function App() {
                         </button>
                         <button
                           className="headerActionButton"
-                          onClick={() => void openExternalUrl(activeProvider?.web_url || activeRepo.root)}
+                          onClick={() => void openExternalUrl(activeRepoWebUrl || activeRepo.root)}
                           disabled={busy || !activeProvider}
                         >
                           <ExternalLink size={16} />
@@ -2006,30 +2166,6 @@ function App() {
                         </button>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="reviewControlBar">
-                    <label className="field reviewTokenField">
-                      <span>{t("review.globalToken", activeProviderName)}</span>
-                      <input
-                        type="password"
-                        value={activeProvider ? providerTokens[activeProvider.kind] || "" : ""}
-                        placeholder={t("review.globalTokenPlaceholder", activeProviderName)}
-                        autoComplete="off"
-                        onChange={(event) => updateActiveProviderGlobalToken(event.target.value)}
-                      />
-                    </label>
-                    <label className="field reviewTokenField">
-                      <span>{t("review.repoToken", activeProviderName)}</span>
-                      <input
-                        type="password"
-                        value={activeRepoTokenOverride}
-                        placeholder={t("review.repoTokenPlaceholder", activeProviderName)}
-                        autoComplete="off"
-                        onChange={(event) => updateActiveRepoTokenOverride(event.target.value)}
-                      />
-                    </label>
-                    <div className="reviewControlHint hint">{t("review.tokenHint", activeProviderName)}</div>
                   </div>
 
                   <div className="metricStrip">
@@ -2119,7 +2255,7 @@ function App() {
                             </div>
 
                             <div className="detailActionGrid">
-                              <button className="reviewActionButton" onClick={() => void openExternalUrl(activePullRequest.web_url)} disabled={busy}>
+                              <button className="reviewActionButton" onClick={() => void openExternalUrl(activePullRequestWebUrl)} disabled={busy}>
                                 <ExternalLink size={16} />
                                 {t("review.openWeb")}
                               </button>
@@ -2441,7 +2577,6 @@ function App() {
                           <h3>{t("panel.repoTools")}</h3>
                           <p>{t("panel.repoBranch", activeRepo.current_branch || t("card.detached"))}</p>
                         </div>
-                        <Settings size={18} />
                       </div>
 
                       <div className="inspectorFields">
@@ -2468,6 +2603,19 @@ function App() {
                             <option value="keep">{t("settings.cleanupKeep")}</option>
                           </select>
                         </label>
+                        {activeProvider?.kind === "gitee" ? (
+                          <label className="field compactField">
+                            <span>{t("settings.giteeEdition")}</span>
+                            <select
+                              value={activeRepoGiteeEdition}
+                              onChange={(event) => updateActiveRepoGiteeEdition(event.target.value as GiteeEdition)}
+                              title={t("settings.giteeEdition")}
+                            >
+                              <option value="standard">{t("settings.giteeEditionStandard")}</option>
+                              <option value="enterprise">{t("settings.giteeEditionEnterprise")}</option>
+                            </select>
+                          </label>
+                        ) : null}
                       </div>
 
                       {activeProvider ? (
@@ -2517,6 +2665,74 @@ function App() {
             <Loader2 className="spin" size={24} />
             <span>{busyLabel || t("busy.working")}</span>
           </div>
+        </div>
+      )}
+
+      {showSettings && (
+        <div className="modalOverlay" role="presentation">
+          <section className="settingsDialog" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title">
+            <div className="settingsDialogHeader">
+              <div>
+                <h2 id="settings-dialog-title">{t("settings.title")}</h2>
+                <p>{activeRepo ? activeRepo.root : t("settings.noActiveRepo")}</p>
+              </div>
+              <button
+                type="button"
+                className="iconButton settingsDialogClose"
+                onClick={() => setShowSettings(false)}
+                title={t("settings.close")}
+                aria-label={t("settings.close")}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="settingsDialogBody">
+              <section className="settingsGroup">
+                <div className="sectionBar">
+                  <span>{t("settings.language")}</span>
+                </div>
+                <div className="settingsGroupGrid">
+                  <label className="field compactField">
+                    <span>{t("settings.language")}</span>
+                    <select value={locale} onChange={(event) => setLocale(event.target.value as "en" | "zh")}> 
+                      <option value="zh">{t("settings.languageChinese")}</option>
+                      <option value="en">{t("settings.languageEnglish")}</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
+
+              <section className="settingsGroup">
+                <div className="sectionBar">
+                  <span>{t("settings.globalTokens")}</span>
+                </div>
+                <div className="settingsGroupGrid">
+                  {[
+                    ["gitee", "Gitee"],
+                    ["github", "GitHub"],
+                    ["gitlab", "GitLab"],
+                  ].map(([kind, label]) => (
+                    <label key={kind} className="field compactField reviewTokenField">
+                      <span>{t("review.globalToken", label)}</span>
+                      <input
+                        type="password"
+                        value={providerTokens[kind as ReviewProviderKind] || ""}
+                        placeholder={t("review.globalTokenPlaceholder", label)}
+                        autoComplete="off"
+                        onChange={(event) => updateProviderGlobalToken(kind as ReviewProviderKind, event.target.value)}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="hint">{t("settings.globalTokensHint")}</div>
+              </section>
+            </div>
+
+            <div className="confirmActions settingsDialogActions">
+              <button onClick={() => setShowSettings(false)}>{t("settings.close")}</button>
+            </div>
+          </section>
         </div>
       )}
 

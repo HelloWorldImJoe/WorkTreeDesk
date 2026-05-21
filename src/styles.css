@@ -1514,6 +1514,78 @@ input::placeholder {
   width: 100%;
 }
 
+.settingsDialog {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  display: grid;
+  gap: 0;
+  max-height: min(84vh, 920px);
+  max-width: 880px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.settingsDialogHeader {
+  align-items: start;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding: var(--space-4);
+}
+
+.settingsDialogHeader p {
+  color: var(--text-secondary);
+  margin-top: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
+.settingsDialogClose {
+  flex: 0 0 auto;
+  min-height: 40px;
+  width: 40px;
+}
+
+.settingsDialogBody {
+  display: grid;
+  gap: var(--space-4);
+  overflow: auto;
+  padding: var(--space-4);
+}
+
+.settingsGroup {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.settingsGroup + .settingsGroup {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-4);
+}
+
+.settingsGroupGrid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settingsReadonly {
+  align-items: center;
+  background: var(--surface-subtle);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  display: inline-flex;
+  min-height: 40px;
+  padding: 0 var(--space-3);
+}
+
+.settingsDialogActions {
+  border-top: 1px solid var(--line);
+  padding: var(--space-4);
+}
+
 .confirmIcon {
   align-items: center;
   border: 1px solid var(--line-strong);
@@ -1675,6 +1747,10 @@ input::placeholder {
     grid-template-columns: 1fr;
   }
 
+  .settingsGroupGrid {
+    grid-template-columns: 1fr;
+  }
+
   .worktreeBadgeStack,
   .worktreeInfoGrid,
   .worktreeRowActions {
@@ -1688,5 +1764,9 @@ input::placeholder {
 
   .confirmDialog {
     grid-template-columns: 1fr;
+  }
+
+  .settingsDialogHeader {
+    flex-direction: column;
   }
 }
