@@ -36,11 +36,30 @@ npm install
 npm run tauri:dev
 ```
 
+如果要启动 preview 渠道的桌面应用：
+
+```bash
+npm run tauri:dev:preview
+```
+
 构建发布版本：
 
 ```bash
 npm run tauri:build
 ```
+
+构建 preview 渠道版本：
+
+```bash
+npm run tauri:build:preview
+```
+
+本地默认打包不会生成 updater artifacts，也不会走发布用的 updater 签名产物流程；只有 GitHub Actions 发布任务才会额外叠加 `src-tauri/tauri.release.conf.json`，开启 updater artifacts 生成。
+
+preview 渠道会使用独立的应用标识与应用名称：
+
+- stable: `WorktreeDesk` / `com.codex.worktreedesk`
+- preview: `WorktreeDesk Preview` / `com.codex.worktreedesk.preview`
 
 ## GitHub Release
 
@@ -51,6 +70,13 @@ npm run tauri:build
 - Release 会上传普通安装产物
 - Release 会额外上传 `latest.json`
 - 构建阶段会生成 updater 对应用的签名文件
+- 工作流会把 updater 清单同步到 `updater` 分支下的渠道目录
+
+渠道对应关系：
+
+- stable 渠道读取 `updater/stable/latest.json`
+- preview 渠道读取 `updater/preview/latest.json`
+- 含预发布后缀的 tag 会被视为 preview 渠道，例如 `v0.1.12-preview.1`
 
 应用启动后会自动检查更新；如果发现新版本，会对同一版本只提示一次。
 另外在 macOS 原生应用菜单中提供了“检查更新”，可随时主动触发检查并直接下载、安装、重启。
@@ -96,12 +122,24 @@ npm run release
 
 默认执行补丁版本递增，也就是最小版本号 `patch + 1`。
 
+如果当前版本已经是 preview 版本，例如 `0.1.12-preview.1`，则稳定渠道的默认 `patch` 发布会把它提升为对应正式版 `0.1.12`。
+
 如果需要升级中版本或大版本：
 
 ```bash
 npm run release:minor
 npm run release:major
 ```
+
+如果要发布 preview 渠道：
+
+```bash
+npm run release:preview
+npm run release:preview:minor
+npm run release:preview:major
+```
+
+preview 渠道默认会生成类似 `0.1.12-preview.1` 的版本号；如果当前已经处于 preview 周期，再次执行默认 preview 发布会递增为 `0.1.12-preview.2`。
 
 脚本会同步更新以下版本号：
 

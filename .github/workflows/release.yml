@@ -41,6 +41,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Resolve release channel
+        shell: bash
+        run: |
+          echo "TAURI_RELEASE_ARGS=--config src-tauri/tauri.release.conf.json" >> "$GITHUB_ENV"
+
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            echo "WORKTREEDESK_CHANNEL=preview" >> "$GITHUB_ENV"
+            echo "TAURI_CHANNEL_ARGS=--config src-tauri/tauri.preview.conf.json" >> "$GITHUB_ENV"
+            echo "RELEASE_CHANNEL_LABEL=Preview" >> "$GITHUB_ENV"
+            echo "RELEASE_BODY=Preview channel build for WorktreeDesk. Use this release to validate upcoming changes before they graduate to stable. Updater manifest: updater/preview/latest.json." >> "$GITHUB_ENV"
+          else
+            echo "WORKTREEDESK_CHANNEL=stable" >> "$GITHUB_ENV"
+            echo "TAURI_CHANNEL_ARGS=" >> "$GITHUB_ENV"
+            echo "RELEASE_CHANNEL_LABEL=Stable" >> "$GITHUB_ENV"
+            echo "RELEASE_BODY=Stable channel release for WorktreeDesk. This is the production-ready updater source. Updater manifest: updater/stable/latest.json." >> "$GITHUB_ENV"
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -73,14 +90,74 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          WORKTREEDESK_CHANNEL: ${{ env.WORKTREEDESK_CHANNEL }}
         with:
           projectPath: .
           tagName: ${{ github.ref_name }}
-          releaseName: WorktreeDesk ${{ github.ref_name }}
-          releaseBody: See the assets below to download this version of WorktreeDesk.
+          releaseName: WorktreeDesk ${{ env.RELEASE_CHANNEL_LABEL }} ${{ github.ref_name }}
+          releaseBody: ${{ env.RELEASE_BODY }}
           assetNamePattern: '[name]_${{ github.ref_name }}_${{ matrix.assetCode }}[setup][ext]'
           generateReleaseNotes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           uploadUpdaterJson: true
           uploadUpdaterSignatures: true
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} ${{ env.TAURI_RELEASE_ARGS }} ${{ env.TAURI_CHANNEL_ARGS }}
+
+  publish-updater-manifest:
+    name: Publish Updater Manifest
+    runs-on: ubuntu-22.04
+    needs: publish-tauri
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release channel
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            echo "RELEASE_CHANNEL=preview" >> "$GITHUB_ENV"
+          else
+            echo "RELEASE_CHANNEL=stable" >> "$GITHUB_ENV"
+          fi
+
+      - name: Download updater manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p .artifacts/updater
+          gh release download "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern latest.json \
+            --dir .artifacts/updater
+          test -f .artifacts/updater/latest.json
+
+      - name: Publish channel manifest branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin updater:refs/remotes/origin/updater || true
+
+          if git show-ref --verify --quiet refs/remotes/origin/updater; then
+            git switch --create updater --track origin/updater
+          else
+            git switch --orphan updater
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+
+          mkdir -p "${RELEASE_CHANNEL}"
+          cp .artifacts/updater/latest.json "${RELEASE_CHANNEL}/latest.json"
+          git add "${RELEASE_CHANNEL}/latest.json"
+
+          if git diff --cached --quiet; then
+            echo "No updater manifest changes to publish."
+            exit 0
+          fi
+
+          git commit -m "chore: update ${RELEASE_CHANNEL} updater manifest for ${GITHUB_REF_NAME}"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" updater:updater

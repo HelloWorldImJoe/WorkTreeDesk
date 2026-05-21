@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "WorktreeDesk Preview",
+  "identifier": "com.codex.worktreedesk.preview",
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://raw.githubusercontent.com/HelloWorldImJoe/WorkTreeDesk/updater/preview/latest.json"
+      ]
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Worktree Desk Preview"
+      }
+    ]
+  }
+}

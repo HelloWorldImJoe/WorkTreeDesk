@@ -5145,6 +5145,7 @@ version = "0.1.11"
 dependencies = [
  "base64 0.22.1",
  "reqwest 0.12.28",
+ "semver",
  "serde",
  "serde_json",
  "tauri",

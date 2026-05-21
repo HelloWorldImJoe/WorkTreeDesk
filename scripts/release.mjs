@@ -11,10 +11,12 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 
 const releaseTypes = new Set(["patch", "minor", "major"]);
+const releaseChannels = new Set(["stable", "preview"]);
 const args = process.argv.slice(2);
 const showHelp = args.includes("--help") || args.includes("-h");
 const dryRun = args.includes("--dry-run");
-const releaseType = args.find((arg) => !arg.startsWith("-")) ?? "patch";
+const releaseChannel = readChannel(args);
+const releaseType = readReleaseType(args);
 
 const trackedFiles = {
   packageJson: path.join(repoRoot, "package.json"),
@@ -33,15 +35,21 @@ if (!releaseTypes.has(releaseType)) {
   fail(`Unsupported release type: ${releaseType}. Use patch, minor, or major.`);
 }
 
+if (!releaseChannels.has(releaseChannel)) {
+  fail(`Unsupported release channel: ${releaseChannel}. Use stable or preview.`);
+}
+
 ensureGitRepository();
-ensureNoPreStagedChanges();
-ensureVersionFilesAreClean();
+if (!dryRun) {
+  ensureNoPreStagedChanges();
+  ensureVersionFilesAreClean();
+}
 
 const versions = readVersions();
 ensureVersionsAreAligned(versions);
 
 const currentVersion = versions.packageJson;
-const nextVersion = bumpVersion(currentVersion, releaseType);
+const nextVersion = bumpVersion(currentVersion, releaseType, releaseChannel);
 const tagName = `v${nextVersion}`;
 const currentBranch = readStdout(["branch", "--show-current"]);
 const upstream = readOptionalStdout(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
@@ -50,7 +58,7 @@ const { remoteName, remoteBranch } = resolvePushTarget(upstream, currentBranch);
 ensureTagDoesNotExist(tagName);
 
 if (dryRun) {
-  log(`Dry run: ${currentVersion} -> ${nextVersion}`);
+  log(`Dry run (${releaseChannel}): ${currentVersion} -> ${nextVersion}`);
   log(`Would commit on branch ${currentBranch} and push to ${remoteName}/${remoteBranch}`);
   process.exit(0);
 }
@@ -63,15 +71,48 @@ runGit(["tag", "-a", tagName, "-m", `Release ${tagName}`]);
 runGit(["push", remoteName, `${currentBranch}:${remoteBranch}`]);
 runGit(["push", remoteName, tagName]);
 
-log(`Release completed: ${currentVersion} -> ${nextVersion}`);
+log(`Release completed (${releaseChannel}): ${currentVersion} -> ${nextVersion}`);
 
 function printHelp() {
   console.log(`Usage: node scripts/release.mjs [patch|minor|major] [--dry-run]\n\n` +
+    `Options:\n` +
+    `  --channel stable|preview   Release channel, defaults to stable\n\n` +
     `Examples:\n` +
     `  npm run release\n` +
     `  npm run release:minor\n` +
     `  npm run release:major\n` +
+    `  npm run release:preview\n` +
     `  node scripts/release.mjs minor --dry-run`);
+}
+
+function readChannel(rawArgs) {
+  const flag = rawArgs.find((arg) => arg.startsWith("--channel="));
+  if (flag) {
+    return flag.slice("--channel=".length).trim().toLowerCase() || "stable";
+  }
+
+  const channelFlagIndex = rawArgs.indexOf("--channel");
+  if (channelFlagIndex >= 0) {
+    return String(rawArgs[channelFlagIndex + 1] || "").trim().toLowerCase() || "stable";
+  }
+
+  return "stable";
+}
+
+function readReleaseType(rawArgs) {
+  const positionalArgs = rawArgs.filter((arg, index) => {
+    if (arg.startsWith("-")) {
+      return false;
+    }
+
+    if (rawArgs[index - 1] === "--channel") {
+      return false;
+    }
+
+    return !releaseChannels.has(arg.toLowerCase());
+  });
+
+  return positionalArgs[0] ?? "patch";
 }
 
 function ensureGitRepository() {
@@ -126,17 +167,59 @@ function ensureVersionsAreAligned(versions) {
   }
 }
 
-function bumpVersion(version, type) {
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)$/);
-  if (!match) {
-    fail(`Unsupported version format: ${version}. Expected x.y.z.`);
+function bumpVersion(version, type, channel) {
+  const parsed = parseVersion(version);
+  if (channel === "preview") {
+    return bumpPreviewVersion(parsed, type);
   }
 
-  let [, major, minor, patch] = match;
+  return bumpStableVersion(parsed, type);
+}
+
+function parseVersion(version) {
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:-preview\.(\d+))?$/);
+  if (!match) {
+    fail(`Unsupported version format: ${version}. Expected x.y.z or x.y.z-preview.N.`);
+  }
+
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    preview: match[4] ? Number(match[4]) : null,
+  };
+}
+
+function bumpStableVersion(parsed, type) {
+  if (parsed.preview !== null && type === "patch") {
+    return formatVersion({ ...parsed, preview: null });
+  }
+
+  return formatVersion({
+    ...bumpBaseVersion(parsed, type),
+    preview: null,
+  });
+}
+
+function bumpPreviewVersion(parsed, type) {
+  if (parsed.preview !== null && type === "patch") {
+    return formatVersion({
+      ...parsed,
+      preview: parsed.preview + 1,
+    });
+  }
+
+  return formatVersion({
+    ...bumpBaseVersion(parsed, type),
+    preview: 1,
+  });
+}
+
+function bumpBaseVersion(parsed, type) {
   const next = {
-    major: Number(major),
-    minor: Number(minor),
-    patch: Number(patch),
+    major: parsed.major,
+    minor: parsed.minor,
+    patch: parsed.patch,
   };
 
   if (type === "major") {
@@ -146,11 +229,19 @@ function bumpVersion(version, type) {
   } else if (type === "minor") {
     next.minor += 1;
     next.patch = 0;
-  } else {
+  } else if (parsed.preview === null) {
     next.patch += 1;
   }
 
-  return `${next.major}.${next.minor}.${next.patch}`;
+  return next;
+}
+
+function formatVersion(version) {
+  const base = `${version.major}.${version.minor}.${version.patch}`;
+  if (version.preview === null) {
+    return base;
+  }
+  return `${base}-preview.${version.preview}`;
 }
 
 function writeVersions(version) {
