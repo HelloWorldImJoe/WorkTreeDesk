@@ -1,6 +1,6 @@
 {
   "name": "worktree-desk",
-  "version": "0.1.12-preview.1",
+  "version": "0.1.12-preview.2",
   "private": true,
   "type": "module",
   "scripts": {
