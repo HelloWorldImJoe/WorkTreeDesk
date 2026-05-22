@@ -44,4 +44,34 @@ impl<'a> GiteeApiClient<'a> {
 
         parse_json_response(response)
     }
+
+    pub(crate) fn patch_form(
+        &self,
+        path: &str,
+        form: Vec<(String, String)>,
+    ) -> Result<Value, String> {
+        let response = api_client("Gitee")?
+            .patch(format!("{GITEE_API_BASE}{path}"))
+            .query(&[("access_token", self.access_token)])
+            .form(&form)
+            .send()
+            .map_err(|error| format!("Failed to reach Gitee API: {error}"))?;
+
+        parse_json_response(response)
+    }
+
+    pub(crate) fn put_form(
+        &self,
+        path: &str,
+        form: Vec<(String, String)>,
+    ) -> Result<Value, String> {
+        let response = api_client("Gitee")?
+            .put(format!("{GITEE_API_BASE}{path}"))
+            .query(&[("access_token", self.access_token)])
+            .form(&form)
+            .send()
+            .map_err(|error| format!("Failed to reach Gitee API: {error}"))?;
+
+        parse_json_response(response)
+    }
 }

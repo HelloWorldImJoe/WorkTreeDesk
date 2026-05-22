@@ -18,7 +18,7 @@ pub(crate) use requests::{
 };
 pub(crate) use review::{
     CodeReviewResult, GiteePullRequestInfo, PullRequestChangedFileInfo, PullRequestCommitInfo,
-    PullRequestInfo, RepositoryMemberInfo,
+    PullRequestInfo, PullRequestPage, RepositoryMemberInfo,
 };
 pub(crate) use scan::{BranchInfo, RepositoryInfo, ScanResult, WorktreeInfo};
 pub(crate) use update::ReleaseCheckResult;

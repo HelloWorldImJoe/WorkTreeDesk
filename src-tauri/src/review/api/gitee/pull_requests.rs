@@ -7,15 +7,18 @@ use super::client::GiteeApiClient;
 pub(crate) fn list_pull_requests(
     repo: &GiteeRepositoryInfo,
     access_token: &str,
+    state: &str,
+    page: u32,
+    per_page: u32,
 ) -> Result<Value, String> {
     GiteeApiClient::new(access_token).get(
         &format!("/repos/{}/{}/pulls", repo.owner, repo.repo),
         vec![
-            ("state".to_string(), "open".to_string()),
+            ("state".to_string(), state.to_string()),
             ("sort".to_string(), "created".to_string()),
             ("direction".to_string(), "desc".to_string()),
-            ("page".to_string(), "1".to_string()),
-            ("per_page".to_string(), "100".to_string()),
+            ("page".to_string(), page.to_string()),
+            ("per_page".to_string(), per_page.to_string()),
         ],
     )
 }
@@ -101,6 +104,29 @@ pub(crate) fn reset_pull_request_test(
 ) -> Result<Value, String> {
     GiteeApiClient::new(access_token).post_form(
         &format!("/repos/{}/{}/pulls/{}/test/reset", repo.owner, repo.repo, number),
+        Vec::new(),
+    )
+}
+
+pub(crate) fn update_pull_request_state(
+    repo: &GiteeRepositoryInfo,
+    access_token: &str,
+    number: i64,
+    state: &str,
+) -> Result<Value, String> {
+    GiteeApiClient::new(access_token).patch_form(
+        &format!("/repos/{}/{}/pulls/{number}", repo.owner, repo.repo),
+        vec![("state".to_string(), state.to_string())],
+    )
+}
+
+pub(crate) fn merge_pull_request(
+    repo: &GiteeRepositoryInfo,
+    access_token: &str,
+    number: i64,
+) -> Result<Value, String> {
+    GiteeApiClient::new(access_token).put_form(
+        &format!("/repos/{}/{}/pulls/{number}/merge", repo.owner, repo.repo),
         Vec::new(),
     )
 }

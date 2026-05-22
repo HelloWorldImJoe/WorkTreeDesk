@@ -480,6 +480,7 @@ input::placeholder {
   min-width: 0;
   overflow: hidden;
   padding: var(--space-4);
+  position: relative;
 }
 
 .sidebarSection {
@@ -547,6 +548,13 @@ input::placeholder {
   display: grid;
   gap: var(--space-2);
   min-width: 0;
+}
+
+.sidebarPathCard em {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.5;
 }
 
 .sidebarPathCard strong,
@@ -636,6 +644,42 @@ input::placeholder {
   display: grid;
   gap: 4px;
   min-width: 0;
+}
+
+.reviewBoundRepoCard {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.reviewBoundRepoHeader {
+  align-items: center;
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 34px minmax(0, 1fr);
+}
+
+.reviewBoundRepoMain {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.reviewBoundRepoMain strong,
+.reviewBoundRepoMeta span {
+  overflow-wrap: anywhere;
+}
+
+.reviewBoundRepoMeta {
+  color: var(--text-secondary);
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.reviewBoundRepoBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .sidebarRepoTitle {
@@ -809,6 +853,11 @@ input::placeholder {
   align-content: start;
 }
 
+.reviewWindowPanel {
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
 .workspaceIdentity h2 {
   font-size: 28px;
   font-weight: 700;
@@ -973,6 +1022,78 @@ input::placeholder {
   grid-template-columns: minmax(0, 1fr);
   justify-items: stretch;
   width: 100%;
+}
+
+.reviewGroupTabs {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.reviewGroupTab {
+  align-items: center;
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 600;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.reviewGroupTab.active {
+  background: var(--highlight-bg);
+  border-color: var(--highlight-border);
+  box-shadow: var(--highlight-shadow);
+  color: var(--highlight-text);
+}
+
+.reviewLoadMoreButton {
+  align-items: center;
+  background: var(--surface-subtle);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  display: inline-flex;
+  gap: var(--space-2);
+  justify-content: center;
+  min-height: 40px;
+  width: 100%;
+}
+
+.reviewLoadMoreButton:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--line-strong);
+}
+
+.reviewQueueGroup {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.reviewQueueGroupHeader {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+  padding: 0 2px;
+}
+
+.reviewQueueGroupHeader span,
+.reviewQueueGroupHeader strong {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.reviewQueueGroupList {
+  display: grid;
+  gap: var(--space-2);
 }
 
 .worktreeRow,
@@ -1375,6 +1496,21 @@ input::placeholder {
   overflow: auto;
 }
 
+.reviewQueueSidebar {
+  overflow: visible;
+}
+
+.reviewSidebarQueue {
+  flex: 1 1 auto;
+  padding-right: 2px;
+}
+
+.reviewWindowDetailSurface {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+}
+
 .pullRequestDetail {
   display: grid;
   gap: var(--space-3);
@@ -1394,6 +1530,147 @@ input::placeholder {
   line-height: 1.6;
   margin: 0;
   white-space: pre-wrap;
+}
+
+.reviewInsightGrid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.reviewInsightPanel {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.reviewInsightHeader {
+  align-items: start;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.reviewInsightHeader p {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
+.reviewInsightList {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.reviewInsightItem {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.reviewInsightRow {
+  align-items: start;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.reviewInsightContent {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.reviewInsightContent strong {
+  overflow-wrap: anywhere;
+}
+
+.reviewInsightMeta {
+  color: var(--text-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.reviewInsightBadges {
+  align-items: center;
+}
+
+.reviewInlineAction {
+  flex: 0 0 auto;
+  min-height: 34px;
+  white-space: nowrap;
+}
+
+.reviewInsightState.reviewInsightError {
+  color: var(--danger-border);
+}
+
+.reviewMetaHint {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.patchPreview {
+  border-top: 1px solid var(--line);
+  margin-top: var(--space-1);
+  padding-top: var(--space-2);
+}
+
+.patchPreview summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.patchPreview pre {
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin: var(--space-2) 0 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: var(--space-3);
+  white-space: pre-wrap;
+}
+
+.reviewSidebarResizeHandle {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  bottom: 0;
+  cursor: col-resize;
+  min-height: auto;
+  padding: 0;
+  position: absolute;
+  right: -8px;
+  top: 0;
+  width: 16px;
+  z-index: 5;
+}
+
+.reviewSidebarResizeHandle::after {
+  background: var(--line-strong);
+  border-radius: 999px;
+  content: "";
+  height: 72px;
+  left: 50%;
+  opacity: 0.45;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  transition: opacity 120ms ease, height 120ms ease;
+  width: 3px;
+}
+
+.reviewSidebarResizeHandle:hover::after,
+.reviewSidebarResizeHandle:focus-visible::after {
+  opacity: 1;
+  height: 112px;
 }
 
 .check {
@@ -1687,6 +1964,10 @@ input::placeholder {
   .inspectorDeck {
     grid-template-columns: 1fr 1fr;
   }
+
+  .reviewSidebarResizeHandle {
+    display: none;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1739,6 +2020,10 @@ input::placeholder {
     border-top: 1px solid var(--line);
     padding-left: 0;
     padding-top: var(--space-3);
+  }
+
+  .reviewSidebarResizeHandle {
+    display: none;
   }
 
   .compactFormGrid,

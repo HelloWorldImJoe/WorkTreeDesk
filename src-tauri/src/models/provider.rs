@@ -18,6 +18,10 @@ pub(crate) struct ReviewProviderCapabilities {
     pub(crate) reset_review: bool,
     pub(crate) approve_test: bool,
     pub(crate) reset_test: bool,
+    pub(crate) show_test_status: bool,
+    pub(crate) reopen_pull_request: bool,
+    pub(crate) close_pull_request: bool,
+    pub(crate) merge_pull_request: bool,
     pub(crate) code_review: bool,
     pub(crate) cleanup_worktree: bool,
 }

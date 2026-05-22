@@ -41,6 +41,7 @@
 
 - src-tauri/src/review/api/github/
 - src-tauri/src/review/api/gitee/
+- src-tauri/src/review/api/gitlab/
 
 职责：
 
@@ -59,6 +60,12 @@
 - client.rs：封装 Gitee access_token query、基础 GET/POST form 请求。
 - pull_requests.rs：封装 PR 列表、详情、审查、测试、重置、commits、files。
 - repositories.rs：封装仓库 subscribers 接口。
+
+#### GitLab API 子模块
+
+- client.rs：封装 GitLab PRIVATE-TOKEN、基础 GET/POST 请求。
+- pull_requests.rs：封装 MR 列表、详情、approvals、commits、changes、审批通过与取消审批。
+- repositories.rs：封装当前认证用户、项目信息、项目成员列表接口。
 
 ### 3. 领域映射层
 
@@ -193,13 +200,39 @@
 - 当前公开 Swagger 中可以稳定确认的关联仓库人员接口为 subscribers。
 - 因 Gitee 文档未在本次改造中稳定定位到与 GitHub collaborators 完全对等的仓库协作者接口，所以统一命令 list_repository_members 在 Gitee 侧当前返回 subscribers，并在 role_name 中显式标记为 subscriber。
 
+### GitLab
+
+基础 API 目录：src-tauri/src/review/api/gitlab/
+
+已封装接口：
+
+| 资源 | 方法 | 远端接口 |
+| --- | --- | --- |
+| MR 列表 | GET | /projects/{project}/merge_requests |
+| MR 详情 | GET | /projects/{project}/merge_requests/{iid} |
+| MR approvals | GET | /projects/{project}/merge_requests/{iid}/approvals |
+| MR 提交列表 | GET | /projects/{project}/merge_requests/{iid}/commits |
+| MR 文件列表 | GET | /projects/{project}/merge_requests/{iid}/changes |
+| MR 审批通过 | POST | /projects/{project}/merge_requests/{iid}/approve |
+| MR 取消审批 | POST | /projects/{project}/merge_requests/{iid}/unapprove |
+| 当前认证用户 | GET | /user |
+| 项目信息 | GET | /projects/{project_id} |
+| 项目成员列表 | GET | /projects/{project}/members/all |
+
+实现要点：
+
+- 使用 GitLab PRIVATE-TOKEN 请求头认证。
+- 统一命令 list_pull_request_commits、list_pull_request_files、list_repository_members 已支持 GitLab 分发。
+- 变更文件列表当前基于 /changes 返回的 diff 片段推导 additions / deletions / changes。
+- 项目成员列表基于 members/all，并把 access_level 映射为 role_name 与 permission。
+
 ## 平台差异处理
 
 ### 1. 审批能力差异
 
 - GitHub：支持 review approval，但不支持本工作流中的“测试通过/测试重置”。
 - Gitee：支持 review 与 test 两条独立状态流。
-- GitLab：当前保留原有逻辑，本次未扩展 commits/files/members 统一命令。
+- GitLab：支持 approval / unapprove、commits / files / members 统一命令，但测试状态仍然是只读的 pipeline 状态，不支持手工“测试通过/测试重置”。
 
 ### 2. 用户身份差异
 
@@ -210,6 +243,7 @@
 
 - GitHub：成员列表采用 collaborators，语义接近“对仓库有访问权限的协作者”。
 - Gitee：当前采用 subscribers，语义更接近“关注仓库的用户”。
+- GitLab：成员列表采用 members/all，语义接近“对项目具有某级访问权限的成员”。
 
 因此，统一命令层返回的是“可供 UI 使用的参与人列表”，而不是强约束的跨平台 ACL 定义。
 

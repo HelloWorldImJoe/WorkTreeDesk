@@ -36,6 +36,9 @@ pub(crate) struct OpenUrlRequest {
 pub(crate) struct ReviewProviderListRequest {
     pub(crate) repo_path: String,
     pub(crate) access_token: String,
+    pub(crate) state: Option<String>,
+    pub(crate) page: Option<u32>,
+    pub(crate) per_page: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]

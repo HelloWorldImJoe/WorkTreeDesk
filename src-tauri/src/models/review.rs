@@ -25,6 +25,15 @@ pub(crate) struct PullRequestInfo {
     pub(crate) review_action_blocked_reason: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub(crate) struct PullRequestPage {
+    pub(crate) state: String,
+    pub(crate) page: u32,
+    pub(crate) per_page: u32,
+    pub(crate) has_more: bool,
+    pub(crate) items: Vec<PullRequestInfo>,
+}
+
 pub(crate) type GiteePullRequestInfo = PullRequestInfo;
 
 /// 创建专用代码评审 worktree 后返回的结果。

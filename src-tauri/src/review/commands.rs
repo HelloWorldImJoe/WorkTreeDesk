@@ -3,7 +3,8 @@ use crate::{
     models::{
         CodeReviewResult, GiteeCodeReviewRequest, GiteePullRequestActionRequest,
         GiteePullRequestDetailRequest, GiteePullRequestListRequest, PullRequestChangedFileInfo,
-        PullRequestCommitInfo, PullRequestInfo, RepositoryInfo, RepositoryMemberInfo,
+        PullRequestCommitInfo, PullRequestInfo, PullRequestPage, RepositoryInfo,
+        RepositoryMemberInfo,
         ReviewProviderKind, ReviewProviderListRequest, ReviewProviderPullRequestRequest,
     },
     provider::require_review_provider,
@@ -18,15 +19,41 @@ use super::{gitee, github, gitlab, shared::require_provider_access_token};
 #[tauri::command]
 pub(crate) fn list_pull_requests(
     request: GiteePullRequestListRequest,
-) -> Result<Vec<PullRequestInfo>, String> {
+) -> Result<PullRequestPage, String> {
     let repo_path = expand_home(&request.repo_path)?;
     let provider = require_review_provider(&repo_path)?;
     let access_token = require_provider_access_token(&request.access_token, &provider)?;
+    let state = request.state.as_deref().unwrap_or("open");
+    let page = request.page.unwrap_or(1).max(1);
+    let per_page = request.per_page.unwrap_or(10).max(1);
 
     match provider.kind {
         ReviewProviderKind::Gitee => gitee::list_gitee_pull_requests(request),
-        ReviewProviderKind::Github => github::list_github_pull_requests(&provider, &access_token),
-        ReviewProviderKind::Gitlab => gitlab::list_gitlab_merge_requests(&provider, &access_token),
+        ReviewProviderKind::Github => {
+            github::list_github_pull_requests_by_state(&provider, &access_token, state, page, per_page)
+        }
+        ReviewProviderKind::Gitlab => {
+            gitlab::list_gitlab_merge_requests_by_state(&provider, &access_token, state, page, per_page)
+        }
+    }
+}
+
+#[tauri::command]
+pub(crate) fn count_pull_requests(
+    request: GiteePullRequestListRequest,
+) -> Result<u64, String> {
+    let repo_path = expand_home(&request.repo_path)?;
+    let provider = require_review_provider(&repo_path)?;
+    let access_token = require_provider_access_token(&request.access_token, &provider)?;
+    let state = request.state.as_deref().unwrap_or("open");
+
+    match provider.kind {
+        ReviewProviderKind::Gitee => {
+            let repo = crate::provider::require_gitee_repository(&repo_path)?;
+            gitee::count_gitee_pull_requests(&repo, &access_token, state)
+        }
+        ReviewProviderKind::Github => github::count_github_pull_requests(&provider, &access_token, state),
+        ReviewProviderKind::Gitlab => gitlab::count_gitlab_merge_requests(&provider, &access_token, state),
     }
 }
 
@@ -118,6 +145,60 @@ pub(crate) fn reset_pull_request_test(
 }
 
 #[tauri::command]
+pub(crate) fn reopen_pull_request(
+    request: GiteePullRequestActionRequest,
+) -> Result<RepositoryInfo, String> {
+    let repo_path = expand_home(&request.repo_path)?;
+    let provider = require_review_provider(&repo_path)?;
+
+    match provider.kind {
+        ReviewProviderKind::Gitee => gitee::reopen_gitee_pull_request(request),
+        ReviewProviderKind::Github => {
+            github::reopen_github_pull_request(&repo_path, &provider, &request)
+        }
+        ReviewProviderKind::Gitlab => {
+            gitlab::reopen_gitlab_merge_request(&repo_path, &provider, &request)
+        }
+    }
+}
+
+#[tauri::command]
+pub(crate) fn close_pull_request(
+    request: GiteePullRequestActionRequest,
+) -> Result<RepositoryInfo, String> {
+    let repo_path = expand_home(&request.repo_path)?;
+    let provider = require_review_provider(&repo_path)?;
+
+    match provider.kind {
+        ReviewProviderKind::Gitee => gitee::close_gitee_pull_request(request),
+        ReviewProviderKind::Github => {
+            github::close_github_pull_request(&repo_path, &provider, &request)
+        }
+        ReviewProviderKind::Gitlab => {
+            gitlab::close_gitlab_merge_request(&repo_path, &provider, &request)
+        }
+    }
+}
+
+#[tauri::command]
+pub(crate) fn merge_pull_request(
+    request: GiteePullRequestActionRequest,
+) -> Result<RepositoryInfo, String> {
+    let repo_path = expand_home(&request.repo_path)?;
+    let provider = require_review_provider(&repo_path)?;
+
+    match provider.kind {
+        ReviewProviderKind::Gitee => gitee::merge_gitee_pull_request(request),
+        ReviewProviderKind::Github => {
+            github::merge_github_pull_request(&repo_path, &provider, &request)
+        }
+        ReviewProviderKind::Gitlab => {
+            gitlab::merge_gitlab_merge_request(&repo_path, &provider, &request)
+        }
+    }
+}
+
+#[tauri::command]
 pub(crate) fn list_pull_request_commits(
     request: ReviewProviderPullRequestRequest,
 ) -> Result<Vec<PullRequestCommitInfo>, String> {
@@ -132,10 +213,9 @@ pub(crate) fn list_pull_request_commits(
         ReviewProviderKind::Github => {
             github::list_github_pull_request_commits(&provider, &access_token, request.number)
         }
-        ReviewProviderKind::Gitlab => Err(
-            "GitLab commit list encapsulation is not implemented for this command yet."
-                .to_string(),
-        ),
+        ReviewProviderKind::Gitlab => {
+            gitlab::list_gitlab_pull_request_commits(&provider, &access_token, request.number)
+        }
     }
 }
 
@@ -154,10 +234,9 @@ pub(crate) fn list_pull_request_files(
         ReviewProviderKind::Github => {
             github::list_github_pull_request_files(&provider, &access_token, request.number)
         }
-        ReviewProviderKind::Gitlab => Err(
-            "GitLab changed-file encapsulation is not implemented for this command yet."
-                .to_string(),
-        ),
+        ReviewProviderKind::Gitlab => {
+            gitlab::list_gitlab_pull_request_files(&provider, &access_token, request.number)
+        }
     }
 }
 
@@ -174,10 +253,9 @@ pub(crate) fn list_repository_members(
         ReviewProviderKind::Github => {
             github::list_github_repository_members(&provider, &access_token)
         }
-        ReviewProviderKind::Gitlab => Err(
-            "GitLab repository member encapsulation is not implemented for this command yet."
-                .to_string(),
-        ),
+        ReviewProviderKind::Gitlab => {
+            gitlab::list_gitlab_repository_members(&provider, &access_token)
+        }
     }
 }
 

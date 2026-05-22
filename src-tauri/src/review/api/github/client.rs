@@ -43,4 +43,30 @@ impl<'a> GithubApiClient<'a> {
 
         parse_json_response_with_label("GitHub", response)
     }
+
+    pub(crate) fn patch_json(&self, path: &str, body: Value) -> Result<Value, String> {
+        let response = api_client("GitHub")?
+            .patch(format!("{GITHUB_API_BASE}{path}"))
+            .bearer_auth(self.access_token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", GITHUB_API_VERSION)
+            .json(&body)
+            .send()
+            .map_err(|error| format!("Failed to reach GitHub API: {error}"))?;
+
+        parse_json_response_with_label("GitHub", response)
+    }
+
+    pub(crate) fn put_json(&self, path: &str, body: Value) -> Result<Value, String> {
+        let response = api_client("GitHub")?
+            .put(format!("{GITHUB_API_BASE}{path}"))
+            .bearer_auth(self.access_token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", GITHUB_API_VERSION)
+            .json(&body)
+            .send()
+            .map_err(|error| format!("Failed to reach GitHub API: {error}"))?;
+
+        parse_json_response_with_label("GitHub", response)
+    }
 }

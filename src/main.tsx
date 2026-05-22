@@ -35,6 +35,7 @@ import {
   Sparkles,
   Terminal,
   Trash2,
+  Users,
   X,
   Zap,
 } from "lucide-react";
@@ -79,6 +80,10 @@ type ReviewProviderCapabilities = {
   reset_review: boolean;
   approve_test: boolean;
   reset_test: boolean;
+  show_test_status: boolean;
+  reopen_pull_request: boolean;
+  close_pull_request: boolean;
+  merge_pull_request: boolean;
   code_review: boolean;
   cleanup_worktree: boolean;
 };
@@ -116,6 +121,21 @@ type PullRequestInfo = {
   review_action_blocked_reason?: string | null;
 };
 
+type PullRequestPage = {
+  state: PullRequestGroupKey;
+  page: number;
+  per_page: number;
+  has_more: boolean;
+  items: PullRequestInfo[];
+};
+
+type PullRequestGroupCache = {
+  items: PullRequestInfo[];
+  page: number;
+  hasMore: boolean;
+  selectedNumber: number | null;
+};
+
 type CodeReviewResult = {
   worktree_path: string;
   review_branch: string;
@@ -123,9 +143,43 @@ type CodeReviewResult = {
 };
 
 type PullRequestCacheEntry = {
-  items: PullRequestInfo[];
+  groups: Partial<Record<PullRequestGroupKey, PullRequestGroupCache>>;
   details: Record<number, PullRequestInfo>;
-  selectedNumber: number | null;
+  openCount: number | null;
+};
+
+type PullRequestCommitInfo = {
+  sha: string;
+  message?: string | null;
+  author?: string | null;
+  authored_at?: string | null;
+  web_url?: string | null;
+};
+
+type PullRequestChangedFileInfo = {
+  filename: string;
+  status?: string | null;
+  additions?: number | null;
+  deletions?: number | null;
+  changes?: number | null;
+  blob_url?: string | null;
+  raw_url?: string | null;
+  patch?: string | null;
+};
+
+type RepositoryMemberInfo = {
+  username: string;
+  display_name: string;
+  avatar_url?: string | null;
+  profile_url?: string | null;
+  role_name?: string | null;
+  permission?: string | null;
+};
+
+type ReviewCollectionState<T> = {
+  items: T[];
+  loading: boolean;
+  error: string | null;
 };
 
 type ProviderTokenMap = Partial<Record<ReviewProviderKind, string>>;
@@ -163,14 +217,19 @@ const REPO_GITEE_EDITIONS_KEY = "worktree-desk.repoGiteeEditions";
 const PULL_REQUEST_CACHE_KEY = "worktree-desk.pullRequestCache";
 const REVIEW_CLEANUP_PREFERENCE_KEY = "worktree-desk.reviewCleanupPreference";
 const REVIEW_WINDOW_REPO_KEY = "worktree-desk.reviewWindowRepo";
+const REVIEW_QUEUE_WIDTH_KEY = "worktree-desk.reviewQueueWidth";
 const MAIN_WINDOW_LABEL = "main";
 const REVIEW_WINDOW_LABEL = "reviews";
 const REVIEW_WINDOW_DEFAULT_WIDTH = 1365;
 const REVIEW_WINDOW_DEFAULT_HEIGHT = 1152;
 const REVIEW_WINDOW_MIN_WIDTH = 1240;
 const REVIEW_WINDOW_MIN_HEIGHT = 820;
+const REVIEW_QUEUE_MIN_WIDTH = 280;
+const REVIEW_QUEUE_MAX_WIDTH = 560;
+const REVIEW_QUEUE_DEFAULT_WIDTH = 348;
 const UPDATE_PROMPTED_VERSION_KEY = "worktree-desk.promptedUpdateVersion";
 const UPDATE_MENU_EVENT = "app://check-for-updates";
+const PULL_REQUEST_PAGE_SIZE = 10;
 
 type ReviewCleanupPreference = "ask" | "delete" | "keep";
 
@@ -207,6 +266,10 @@ function defaultCapabilities(kind: ReviewProviderKind): ReviewProviderCapabiliti
     reset_review: kind !== "github",
     approve_test: kind === "gitee",
     reset_test: kind === "gitee",
+    show_test_status: kind !== "github",
+    reopen_pull_request: true,
+    close_pull_request: true,
+    merge_pull_request: true,
     code_review: true,
     cleanup_worktree: true,
   };
@@ -260,6 +323,10 @@ function normalizeProvider(provider: any): ReviewProviderInfo | null {
           reset_review: Boolean(provider.capabilities.reset_review),
           approve_test: Boolean(provider.capabilities.approve_test),
           reset_test: Boolean(provider.capabilities.reset_test),
+          show_test_status: Boolean(provider.capabilities.show_test_status),
+          reopen_pull_request: Boolean(provider.capabilities.reopen_pull_request ?? true),
+          close_pull_request: Boolean(provider.capabilities.close_pull_request ?? true),
+          merge_pull_request: Boolean(provider.capabilities.merge_pull_request ?? true),
           code_review: Boolean(provider.capabilities.code_review ?? true),
           cleanup_worktree: Boolean(provider.capabilities.cleanup_worktree ?? true),
         }
@@ -456,6 +523,10 @@ function isPullRequestInfo(value: unknown): value is PullRequestInfo {
   );
 }
 
+function isPullRequestGroupKey(value: unknown): value is PullRequestGroupKey {
+  return value === "open" || value === "closed" || value === "merged" || value === "reverted";
+}
+
 function loadPullRequestCacheStore(): Record<string, PullRequestCacheEntry> {
   try {
     const raw = localStorage.getItem(PULL_REQUEST_CACHE_KEY);
@@ -468,8 +539,8 @@ function loadPullRequestCacheStore(): Record<string, PullRequestCacheEntry> {
       Object.entries(parsed).flatMap(([repoRoot, entry]) => {
         if (!entry || typeof entry !== "object") return [];
 
-        const items = Array.isArray((entry as PullRequestCacheEntry).items)
-          ? (entry as PullRequestCacheEntry).items.filter(isPullRequestInfo)
+        const legacyItems = Array.isArray((entry as { items?: unknown[] }).items)
+          ? ((entry as { items?: unknown[] }).items ?? []).filter(isPullRequestInfo)
           : [];
         const rawDetails = (entry as PullRequestCacheEntry).details;
         const details = rawDetails && typeof rawDetails === "object"
@@ -479,11 +550,45 @@ function loadPullRequestCacheStore(): Record<string, PullRequestCacheEntry> {
               ),
             )
           : {};
-        const selectedNumber = typeof (entry as PullRequestCacheEntry).selectedNumber === "number"
-          ? (entry as PullRequestCacheEntry).selectedNumber
+        const rawGroups = (entry as PullRequestCacheEntry).groups;
+        const groups = rawGroups && typeof rawGroups === "object"
+          ? Object.fromEntries(
+              Object.entries(rawGroups).flatMap(([groupKey, groupValue]) => {
+                if (!isPullRequestGroupKey(groupKey) || !groupValue || typeof groupValue !== "object") return [];
+
+                const items = Array.isArray((groupValue as PullRequestGroupCache).items)
+                  ? (groupValue as PullRequestGroupCache).items.filter(isPullRequestInfo)
+                  : [];
+                const page = typeof (groupValue as PullRequestGroupCache).page === "number"
+                  ? Math.max(1, (groupValue as PullRequestGroupCache).page)
+                  : 1;
+                const hasMore = Boolean((groupValue as PullRequestGroupCache).hasMore);
+                const selectedNumber = typeof (groupValue as PullRequestGroupCache).selectedNumber === "number"
+                  ? (groupValue as PullRequestGroupCache).selectedNumber
+                  : null;
+
+                return [[groupKey, { items, page, hasMore, selectedNumber } satisfies PullRequestGroupCache]];
+              }),
+            ) as Partial<Record<PullRequestGroupKey, PullRequestGroupCache>>
+          : {};
+        const legacySelectedNumber = typeof (entry as { selectedNumber?: unknown }).selectedNumber === "number"
+          ? (entry as { selectedNumber?: number }).selectedNumber ?? null
+          : null;
+        const nextGroups = Object.keys(groups).length > 0
+          ? groups
+          : {
+              open: {
+                items: legacyItems,
+                page: 1,
+                hasMore: false,
+                selectedNumber: legacySelectedNumber,
+              },
+            } satisfies Partial<Record<PullRequestGroupKey, PullRequestGroupCache>>;
+        const openCount = typeof (entry as PullRequestCacheEntry).openCount === "number"
+          ? (entry as PullRequestCacheEntry).openCount
           : null;
 
-        return [[repoRoot, { items, details, selectedNumber } satisfies PullRequestCacheEntry]];
+        return [[repoRoot, { groups: nextGroups, details, openCount } satisfies PullRequestCacheEntry]];
       }),
     );
   } catch {
@@ -520,6 +625,35 @@ function loadReviewWindowRepo() {
 function saveReviewWindowRepo(repoCommonDir: string) {
   try {
     localStorage.setItem(REVIEW_WINDOW_REPO_KEY, repoCommonDir);
+  } catch {}
+}
+
+function clampReviewQueueWidth(width: number) {
+  if (typeof window === "undefined") {
+    return Math.min(Math.max(width, REVIEW_QUEUE_MIN_WIDTH), REVIEW_QUEUE_MAX_WIDTH);
+  }
+
+  const maxAllowed = Math.min(REVIEW_QUEUE_MAX_WIDTH, Math.max(REVIEW_QUEUE_MIN_WIDTH, window.innerWidth - 520));
+  return Math.min(Math.max(width, REVIEW_QUEUE_MIN_WIDTH), maxAllowed);
+}
+
+function loadReviewQueueWidth() {
+  try {
+    const raw = localStorage.getItem(REVIEW_QUEUE_WIDTH_KEY);
+    if (!raw) return REVIEW_QUEUE_DEFAULT_WIDTH;
+
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return REVIEW_QUEUE_DEFAULT_WIDTH;
+
+    return clampReviewQueueWidth(parsed);
+  } catch {
+    return REVIEW_QUEUE_DEFAULT_WIDTH;
+  }
+}
+
+function saveReviewQueueWidth(width: number) {
+  try {
+    localStorage.setItem(REVIEW_QUEUE_WIDTH_KEY, String(clampReviewQueueWidth(width)));
   } catch {}
 }
 
@@ -605,6 +739,75 @@ function canResetTest(value: string | null | undefined) {
   return ["passed", "pass", "success"].includes(normalizeStatus(value));
 }
 
+type PullRequestGroupKey = "open" | "closed" | "merged" | "reverted";
+
+function getPullRequestGroupKey(value: string | null | undefined): PullRequestGroupKey {
+  const normalized = normalizeStatus(value);
+
+  if (!normalized || ["open", "opened", "reopened"].includes(normalized)) {
+    return "open";
+  }
+
+  if (["merged", "merge"].includes(normalized)) {
+    return "merged";
+  }
+
+  if (["closed", "close"].includes(normalized)) {
+    return "closed";
+  }
+
+  return "reverted";
+}
+
+function canReopenPullRequest(value: string | null | undefined) {
+  const group = getPullRequestGroupKey(value);
+  return group === "closed" || group === "reverted";
+}
+
+function canClosePullRequest(value: string | null | undefined) {
+  return getPullRequestGroupKey(value) === "open";
+}
+
+function canMergePullRequest(value: string | null | undefined) {
+  return getPullRequestGroupKey(value) === "open";
+}
+
+function formatStatusLabel(
+  t: (key: any, ...args: any[]) => string,
+  value: string | null | undefined,
+  fallback = "",
+) {
+  const normalized = normalizeStatus(value);
+
+  switch (normalized) {
+    case "open":
+    case "opened":
+    case "reopened":
+      return t("review.stateOpen");
+    case "closed":
+    case "close":
+      return t("review.stateClosed");
+    case "merged":
+    case "merge":
+      return t("review.stateMerged");
+    case "reverted":
+    case "revert":
+    case "abandoned":
+    case "declined":
+    case "rejected":
+    case "locked":
+      return t("review.stateReverted");
+    case "pending":
+      return t("review.statusPending");
+    default:
+      return humanizeStatus(value) || fallback;
+  }
+}
+
+function getDefaultPullRequestNumber(items: PullRequestInfo[]) {
+  return items.find((item) => getPullRequestGroupKey(item.state) === "open")?.number ?? items[0]?.number ?? null;
+}
+
 function usesApprovalLanguage(provider: ReviewProviderInfo | null | undefined) {
   return provider?.kind === "github" || provider?.kind === "gitlab";
 }
@@ -647,6 +850,74 @@ function formatByteSize(bytes: number) {
   return `${size >= 10 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unitIndex]}`;
 }
 
+function createReviewCollectionState<T>(): ReviewCollectionState<T> {
+  return {
+    items: [],
+    loading: false,
+    error: null,
+  };
+}
+
+function supportsReviewCollection(
+  provider: ReviewProviderInfo | null | undefined,
+  collection: "commits" | "files" | "members",
+) {
+  if (!provider) return false;
+
+  switch (collection) {
+    case "commits":
+    case "files":
+    case "members":
+      return provider.kind === "gitee" || provider.kind === "github" || provider.kind === "gitlab";
+    default:
+      return false;
+  }
+}
+
+type ReviewInsightPanelProps = {
+  title: string;
+  hint: string;
+  loadingLabel: string;
+  emptyLabel: string;
+  count?: number;
+  loading: boolean;
+  error: string | null;
+  children: React.ReactNode;
+};
+
+function ReviewInsightPanel({
+  title,
+  hint,
+  loadingLabel,
+  emptyLabel,
+  count,
+  loading,
+  error,
+  children,
+}: ReviewInsightPanelProps) {
+  return (
+    <section className="reviewInsightPanel panelSurface">
+      <div className="reviewInsightHeader">
+        <div>
+          <span className="eyebrow">{title}</span>
+          <p>{hint}</p>
+        </div>
+        <strong>{typeof count === "number" ? count : "--"}</strong>
+      </div>
+
+      {loading ? (
+        <div className="subtleEmpty reviewInsightState">{loadingLabel}</div>
+      ) : error ? (
+        <div className="subtleEmpty reviewInsightState reviewInsightError">{error}</div>
+      ) : (count ?? 0) === 0 ? (
+        <div className="subtleEmpty reviewInsightState">{emptyLabel}</div>
+      ) : (
+        <div className="reviewInsightList">{children}</div>
+      )}
+    </section>
+  );
+}
+
 function App() {
   const { t, locale, setLocale } = useLocale();
   const appView = getAppView();
@@ -659,6 +930,7 @@ function App() {
   const [showHiddenRepos, setShowHiddenRepos] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [editor, setEditor] = useState(() => getRepoEditor(null));
+  const [reviewQueueWidth, setReviewQueueWidth] = useState(loadReviewQueueWidth);
   const [worktreePath, setWorktreePath] = useState("");
   const [branch, setBranch] = useState("");
   const [forceRemove, setForceRemove] = useState(false);
@@ -671,11 +943,19 @@ function App() {
   const [pendingCreateBranch, setPendingCreateBranch] = useState<{ branch: string; path: string } | null>(null);
   const [providerTokens, setProviderTokens] = useState<ProviderTokenMap>(loadProviderTokens);
   const [repoGiteeEditions, setRepoGiteeEditions] = useState<RepoGiteeEditionMap>(loadRepoGiteeEditions);
+  const [activePullRequestGroup, setActivePullRequestGroup] = useState<PullRequestGroupKey>("open");
   const [pullRequests, setPullRequests] = useState<PullRequestInfo[]>([]);
   const [pullRequestsLoading, setPullRequestsLoading] = useState(false);
+  const [pullRequestsLoadingMore, setPullRequestsLoadingMore] = useState(false);
+  const [pullRequestPage, setPullRequestPage] = useState(1);
+  const [pullRequestsHasMore, setPullRequestsHasMore] = useState(false);
+  const [openPullRequestCount, setOpenPullRequestCount] = useState<number | null>(null);
   const [pullRequestDetailLoading, setPullRequestDetailLoading] = useState(false);
   const [selectedPullRequestNumber, setSelectedPullRequestNumber] = useState<number | null>(null);
   const [pullRequestDetail, setPullRequestDetail] = useState<PullRequestInfo | null>(null);
+  const [pullRequestCommitsState, setPullRequestCommitsState] = useState<ReviewCollectionState<PullRequestCommitInfo>>(() => createReviewCollectionState());
+  const [pullRequestFilesState, setPullRequestFilesState] = useState<ReviewCollectionState<PullRequestChangedFileInfo>>(() => createReviewCollectionState());
+  const [repositoryMembersState, setRepositoryMembersState] = useState<ReviewCollectionState<RepositoryMemberInfo>>(() => createReviewCollectionState());
   const [reviewCleanupPreference, setReviewCleanupPreference] = useState<ReviewCleanupPreference>(loadReviewCleanupPreference);
   const [pendingReviewCleanup, setPendingReviewCleanup] = useState<PendingReviewCleanup | null>(null);
   const [rememberReviewCleanupChoice, setRememberReviewCleanupChoice] = useState(false);
@@ -684,27 +964,28 @@ function App() {
 
   const repositories = result?.repositories ?? [];
   const hiddenRepoSet = useMemo(() => new Set(hiddenRepoIds), [hiddenRepoIds]);
-  const reviewRepositories = useMemo(
-    () => repositories.filter((repo) => Boolean(repo.provider)),
-    [repositories],
-  );
-  const availableRepositories = isReviewWindow ? reviewRepositories : repositories;
+  const reviewWindowRepo = useMemo(() => {
+    if (!isReviewWindow || !selectedRepo) return null;
+    return repositories.find((repo) => repo.common_dir === selectedRepo) ?? null;
+  }, [isReviewWindow, repositories, selectedRepo]);
+  const availableRepositories = isReviewWindow ? (reviewWindowRepo ? [reviewWindowRepo] : []) : repositories;
   const hiddenRepositories = useMemo(
-    () => availableRepositories.filter((repo) => hiddenRepoSet.has(repo.common_dir)),
-    [availableRepositories, hiddenRepoSet],
+    () => isReviewWindow ? [] : availableRepositories.filter((repo) => hiddenRepoSet.has(repo.common_dir)),
+    [availableRepositories, hiddenRepoSet, isReviewWindow],
   );
   const unhiddenRepositories = useMemo(
-    () => availableRepositories.filter((repo) => !hiddenRepoSet.has(repo.common_dir)),
-    [availableRepositories, hiddenRepoSet],
+    () => isReviewWindow ? availableRepositories : availableRepositories.filter((repo) => !hiddenRepoSet.has(repo.common_dir)),
+    [availableRepositories, hiddenRepoSet, isReviewWindow],
   );
   const visibleRepositories = useMemo(
-    () => showHiddenRepos ? [...unhiddenRepositories, ...hiddenRepositories] : unhiddenRepositories,
-    [hiddenRepositories, showHiddenRepos, unhiddenRepositories],
+    () => isReviewWindow ? availableRepositories : (showHiddenRepos ? [...unhiddenRepositories, ...hiddenRepositories] : unhiddenRepositories),
+    [availableRepositories, hiddenRepositories, isReviewWindow, showHiddenRepos, unhiddenRepositories],
   );
-  const allDisplayedReposHidden = !showHiddenRepos && visibleRepositories.length === 0 && hiddenRepositories.length > 0;
+  const allDisplayedReposHidden = !isReviewWindow && !showHiddenRepos && visibleRepositories.length === 0 && hiddenRepositories.length > 0;
   const activeRepo = useMemo(() => {
+    if (isReviewWindow) return reviewWindowRepo;
     return visibleRepositories.find((repo) => repo.common_dir === selectedRepo) ?? visibleRepositories[0] ?? null;
-  }, [visibleRepositories, selectedRepo]);
+  }, [isReviewWindow, reviewWindowRepo, visibleRepositories, selectedRepo]);
   const activePullRequest = useMemo(() => {
     if (pullRequestDetail && pullRequestDetail.number === selectedPullRequestNumber) {
       return pullRequestDetail;
@@ -792,9 +1073,17 @@ function App() {
   }
 
   function clearPullRequestView() {
+    setActivePullRequestGroup("open");
     setPullRequests([]);
+    setPullRequestsLoadingMore(false);
+    setPullRequestPage(1);
+    setPullRequestsHasMore(false);
+    setOpenPullRequestCount(null);
     setPullRequestDetail(null);
     setSelectedPullRequestNumber(null);
+    setPullRequestCommitsState(createReviewCollectionState());
+    setPullRequestFilesState(createReviewCollectionState());
+    setRepositoryMembersState(createReviewCollectionState());
   }
 
   function invalidateBranchCache(repoRoot?: string | null) {
@@ -807,23 +1096,47 @@ function App() {
     }
   }
 
-  function rememberPullRequestItems(repoRoot: string, items: PullRequestInfo[], selectedNumber: number | null) {
+  function rememberPullRequestGroup(
+    repoRoot: string,
+    group: PullRequestGroupKey,
+    items: PullRequestInfo[],
+    page: number,
+    hasMore: boolean,
+    selectedNumber: number | null,
+  ) {
     const current = pullRequestCacheRef.current[repoRoot];
     pullRequestCacheRef.current[repoRoot] = {
-      items,
+      groups: {
+        ...(current?.groups ?? {}),
+        [group]: {
+          items,
+          page,
+          hasMore,
+          selectedNumber,
+        },
+      },
       details: current?.details ?? {},
-      selectedNumber,
+      openCount: current?.openCount ?? null,
     };
     commitPullRequestCache();
   }
 
-  function rememberPullRequestSelection(repoRoot: string, selectedNumber: number | null) {
+  function rememberPullRequestSelection(repoRoot: string, group: PullRequestGroupKey, selectedNumber: number | null) {
     const current = pullRequestCacheRef.current[repoRoot];
     if (!current) return;
+    const existingGroup = current.groups[group];
+    if (!existingGroup) return;
 
     pullRequestCacheRef.current[repoRoot] = {
-      ...current,
-      selectedNumber,
+      groups: {
+        ...current.groups,
+        [group]: {
+          ...existingGroup,
+          selectedNumber,
+        },
+      },
+      details: current.details,
+      openCount: current.openCount,
     };
     commitPullRequestCache();
   }
@@ -831,30 +1144,53 @@ function App() {
   function rememberPullRequestDetail(repoRoot: string, detail: PullRequestInfo) {
     const current = pullRequestCacheRef.current[repoRoot];
     pullRequestCacheRef.current[repoRoot] = {
-      items: current?.items ?? [],
+      groups: current?.groups ?? {},
       details: {
         ...(current?.details ?? {}),
         [detail.number]: detail,
       },
-      selectedNumber: detail.number,
+      openCount: current?.openCount ?? null,
     };
     commitPullRequestCache();
   }
 
-  function restorePullRequestCache(repoRoot: string, preferredNumber?: number | null) {
+  function rememberOpenPullRequestCount(repoRoot: string, count: number | null) {
+    const current = pullRequestCacheRef.current[repoRoot];
+    pullRequestCacheRef.current[repoRoot] = {
+      groups: current?.groups ?? {},
+      details: current?.details ?? {},
+      openCount: count,
+    };
+    commitPullRequestCache();
+  }
+
+  function restorePullRequestCache(
+    repoRoot: string,
+    group: PullRequestGroupKey,
+    preferredNumber?: number | null,
+  ) {
     const current = pullRequestCacheRef.current[repoRoot];
     if (!current) return false;
+    const cachedGroup = current.groups[group];
+    if (!cachedGroup) {
+      setOpenPullRequestCount(current.openCount ?? null);
+      return false;
+    }
 
-    const nextNumber = preferredNumber != null && current.items.some((item) => item.number === preferredNumber)
+    const nextNumber = preferredNumber != null && cachedGroup.items.some((item) => item.number === preferredNumber)
       ? preferredNumber
-      : current.selectedNumber != null && current.items.some((item) => item.number === current.selectedNumber)
-        ? current.selectedNumber
-        : current.items[0]?.number ?? null;
+      : cachedGroup.selectedNumber != null && cachedGroup.items.some((item) => item.number === cachedGroup.selectedNumber)
+        ? cachedGroup.selectedNumber
+        : cachedGroup.items[0]?.number ?? null;
 
-    setPullRequests(current.items);
+    setActivePullRequestGroup(group);
+    setPullRequests(cachedGroup.items);
+    setPullRequestPage(cachedGroup.page);
+    setPullRequestsHasMore(cachedGroup.hasMore);
+    setOpenPullRequestCount(current.openCount ?? null);
     setSelectedPullRequestNumber(nextNumber);
     setPullRequestDetail(nextNumber != null ? current.details[nextNumber] ?? null : null);
-    rememberPullRequestSelection(repoRoot, nextNumber);
+    rememberPullRequestSelection(repoRoot, group, nextNumber);
     return true;
   }
 
@@ -898,6 +1234,12 @@ function App() {
   }, [reviewCleanupPreference]);
 
   useEffect(() => {
+    saveReviewQueueWidth(reviewQueueWidth);
+  }, [reviewQueueWidth]);
+
+  useEffect(() => {
+    if (isReviewWindow) return;
+
     if (!selectedRepo) {
       if (visibleRepositories[0]?.common_dir) {
         setSelectedRepo(visibleRepositories[0].common_dir);
@@ -912,7 +1254,7 @@ function App() {
     if (visibleRepositories[0]?.common_dir) {
       setSelectedRepo(visibleRepositories[0].common_dir);
     }
-  }, [selectedRepo, visibleRepositories]);
+  }, [isReviewWindow, selectedRepo, visibleRepositories]);
 
   useEffect(() => {
     saveProviderTokens(providerTokens);
@@ -955,7 +1297,7 @@ function App() {
         pullRequestCacheRef.current = loadPullRequestCacheStore();
         setPullRequestCacheVersion((current) => current + 1);
         if (activeRepo?.root) {
-          restorePullRequestCache(activeRepo.root, selectedPullRequestNumber);
+          restorePullRequestCache(activeRepo.root, activePullRequestGroup, selectedPullRequestNumber);
         }
       }
 
@@ -999,6 +1341,27 @@ function App() {
       saveReviewWindowRepo(activeRepo.common_dir);
     }
   }, [isReviewWindow, activeRepo?.common_dir]);
+
+  useEffect(() => {
+    if (!isReviewWindow) return;
+
+    const handleResize = () => {
+      setReviewQueueWidth((current) => clampReviewQueueWidth(current));
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [isReviewWindow]);
+
+  useEffect(() => {
+    if (!isReviewWindow) return;
+
+    void WebviewWindow.getCurrent().setTitle(
+      activeRepo
+        ? `${t("review.windowTitle")} · ${activeRepo.name || basename(activeRepo.root)}`
+        : t("review.windowTitle"),
+    ).catch(() => {});
+  }, [activeRepo, isReviewWindow, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1135,6 +1498,11 @@ function App() {
   }, [activeRepo?.root, branchLoadVersion]);
 
   useEffect(() => {
+    if (!activeRepo) {
+      clearPullRequestView();
+      return;
+    }
+
     if (!activeProvider) {
       clearPullRequestView();
       return;
@@ -1145,11 +1513,23 @@ function App() {
       return;
     }
 
-    const restored = restorePullRequestCache(activeRepo.root);
     const cachedPullRequests = pullRequestCacheRef.current[activeRepo.root];
+    setOpenPullRequestCount(cachedPullRequests?.openCount ?? null);
+    void loadOpenPullRequestCount({
+      force: true,
+      background: true,
+      suppressErrors: !isReviewWindow,
+      repo: activeRepo,
+      provider: activeProvider,
+      accessToken: activeProviderToken.trim(),
+    });
+
+    const initialGroup: PullRequestGroupKey = "open";
+    setActivePullRequestGroup(initialGroup);
+    const restored = restorePullRequestCache(activeRepo.root, initialGroup);
     if (!isReviewWindow) {
       if (!restored) clearPullRequestView();
-      void loadPullRequests(null, {
+      void loadPullRequests(initialGroup, {
         force: true,
         background: true,
         suppressErrors: true,
@@ -1160,8 +1540,8 @@ function App() {
       return;
     }
 
-    if (restored && (cachedPullRequests?.items.length ?? 0) > 0) {
-      void loadPullRequests(null, {
+    if (restored && ((cachedPullRequests?.groups[initialGroup]?.items.length ?? 0) > 0)) {
+      void loadPullRequests(initialGroup, {
         force: true,
         background: true,
         repo: activeRepo,
@@ -1169,13 +1549,116 @@ function App() {
         accessToken: activeProviderToken.trim(),
       });
     } else {
-      void loadPullRequests(null, {
+      void loadPullRequests(initialGroup, {
         force: true,
         repo: activeRepo,
         provider: activeProvider,
         accessToken: activeProviderToken.trim(),
       });
     }
+  }, [activeRepo?.root, activeProvider?.kind, activeProvider?.full_name, activeProviderToken, isReviewWindow]);
+
+  useEffect(() => {
+    if (!isReviewWindow || !activePullRequest || !activeRepo || !activeProvider || !activeProviderToken.trim()) {
+      setPullRequestCommitsState(createReviewCollectionState());
+      setPullRequestFilesState(createReviewCollectionState());
+      return;
+    }
+
+    const accessToken = activeProviderToken.trim();
+    const repoPath = activeRepo.root;
+    const number = activePullRequest.number;
+    const loadCommits = supportsReviewCollection(activeProvider, "commits");
+    const loadFiles = supportsReviewCollection(activeProvider, "files");
+
+    if (!loadCommits) {
+      setPullRequestCommitsState(createReviewCollectionState());
+    } else {
+      setPullRequestCommitsState({ items: [], loading: true, error: null });
+    }
+
+    if (!loadFiles) {
+      setPullRequestFilesState(createReviewCollectionState());
+    } else {
+      setPullRequestFilesState({ items: [], loading: true, error: null });
+    }
+
+    let cancelled = false;
+
+    if (loadCommits) {
+      invoke<PullRequestCommitInfo[]>("list_pull_request_commits", {
+        request: {
+          repo_path: repoPath,
+          access_token: accessToken,
+          number,
+        },
+      })
+        .then((items) => {
+          if (!cancelled) {
+            setPullRequestCommitsState({ items, loading: false, error: null });
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setPullRequestCommitsState({ items: [], loading: false, error: getErrorMessage(error) });
+          }
+        });
+    }
+
+    if (loadFiles) {
+      invoke<PullRequestChangedFileInfo[]>("list_pull_request_files", {
+        request: {
+          repo_path: repoPath,
+          access_token: accessToken,
+          number,
+        },
+      })
+        .then((items) => {
+          if (!cancelled) {
+            setPullRequestFilesState({ items, loading: false, error: null });
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setPullRequestFilesState({ items: [], loading: false, error: getErrorMessage(error) });
+          }
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePullRequest?.number, activeRepo?.root, activeProvider?.kind, activeProvider?.full_name, activeProviderToken, isReviewWindow]);
+
+  useEffect(() => {
+    if (!isReviewWindow || !activeRepo || !activeProvider || !activeProviderToken.trim() || !supportsReviewCollection(activeProvider, "members")) {
+      setRepositoryMembersState(createReviewCollectionState());
+      return;
+    }
+
+    let cancelled = false;
+    setRepositoryMembersState({ items: [], loading: true, error: null });
+
+    invoke<RepositoryMemberInfo[]>("list_repository_members", {
+      request: {
+        repo_path: activeRepo.root,
+        access_token: activeProviderToken.trim(),
+      },
+    })
+      .then((items) => {
+        if (!cancelled) {
+          setRepositoryMembersState({ items, loading: false, error: null });
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setRepositoryMembersState({ items: [], loading: false, error: getErrorMessage(error) });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [activeRepo?.root, activeProvider?.kind, activeProvider?.full_name, activeProviderToken, isReviewWindow]);
 
   async function runAction<T>(
@@ -1323,8 +1806,53 @@ function App() {
     }
   }
 
+  async function loadOpenPullRequestCount(options?: {
+    force?: boolean;
+    background?: boolean;
+    suppressErrors?: boolean;
+    repo?: RepositoryInfo | null;
+    provider?: ReviewProviderInfo | null;
+    accessToken?: string;
+  }) {
+    const repo = options?.repo ?? activeRepo;
+    const provider = options?.provider ?? activeProvider;
+    const accessToken = options?.accessToken ?? activeProviderToken.trim();
+    if (!repo || !provider || !accessToken) return null;
+
+    const repoRoot = repo.root;
+    const cachedCount = pullRequestCacheRef.current[repoRoot]?.openCount ?? null;
+    const isCurrentRepo = repoRoot === activeRepo?.root;
+
+    if (cachedCount != null && isCurrentRepo) {
+      setOpenPullRequestCount(cachedCount);
+      if (!options?.force) {
+        return cachedCount;
+      }
+    }
+
+    try {
+      const count = await invoke<number>("count_pull_requests", {
+        request: {
+          repo_path: repo.root,
+          access_token: accessToken,
+          state: "open",
+        },
+      });
+      rememberOpenPullRequestCount(repoRoot, count);
+      if (isCurrentRepo) {
+        setOpenPullRequestCount(count);
+      }
+      return count;
+    } catch (error) {
+      if (!options?.suppressErrors) {
+        setRawMessage(getErrorMessage(error));
+      }
+      return cachedCount;
+    }
+  }
+
   async function loadPullRequests(
-    preferredNumber = selectedPullRequestNumber,
+    group = activePullRequestGroup,
     options?: {
       force?: boolean;
       background?: boolean;
@@ -1332,6 +1860,8 @@ function App() {
       repo?: RepositoryInfo | null;
       provider?: ReviewProviderInfo | null;
       accessToken?: string;
+      append?: boolean;
+      preferredNumber?: number | null;
     },
   ) {
     const repo = options?.repo ?? activeRepo;
@@ -1340,37 +1870,58 @@ function App() {
     if (!repo || !provider || !accessToken) return;
 
     const repoRoot = repo.root;
-    if (!options?.force && restorePullRequestCache(repoRoot, preferredNumber)) {
+    const preferredNumber = options?.preferredNumber ?? selectedPullRequestNumber;
+    if (!options?.append && !options?.force && restorePullRequestCache(repoRoot, group, preferredNumber)) {
       return;
     }
 
     const isCurrentRepo = repoRoot === activeRepo?.root;
     if (!options?.background && isCurrentRepo) {
-      setPullRequestsLoading(true);
+      if (options?.append) {
+        setPullRequestsLoadingMore(true);
+      } else {
+        setPullRequestsLoading(true);
+      }
     }
 
     try {
-      const items = await invoke<PullRequestInfo[]>("list_pull_requests", {
+      const currentGroupCache = pullRequestCacheRef.current[repoRoot]?.groups[group];
+      const targetPage = options?.append ? ((currentGroupCache?.page ?? 1) + 1) : 1;
+      const pageData = await invoke<PullRequestPage>("list_pull_requests", {
         request: {
           repo_path: repo.root,
           access_token: accessToken,
+          state: group,
+          page: targetPage,
+          per_page: PULL_REQUEST_PAGE_SIZE,
         },
       });
 
+      const previousItems = options?.append ? (currentGroupCache?.items ?? []) : [];
+      const items = options?.append
+        ? [...previousItems, ...pageData.items.filter((item) => !previousItems.some((current) => current.number === item.number))]
+        : pageData.items;
+
       const nextNumber = preferredNumber && items.some((item) => item.number === preferredNumber)
         ? preferredNumber
-        : items[0]?.number ?? null;
-      const previousEntry = pullRequestCacheRef.current[repoRoot];
-      const listChanged = !previousEntry
-        || !arePullRequestListsEqual(previousEntry.items, items)
-        || previousEntry.selectedNumber !== nextNumber;
+        : (currentGroupCache?.selectedNumber != null && items.some((item) => item.number === currentGroupCache.selectedNumber)
+          ? currentGroupCache.selectedNumber
+          : items[0]?.number ?? null);
+      const listChanged = !currentGroupCache
+        || !arePullRequestListsEqual(currentGroupCache.items, items)
+        || currentGroupCache.selectedNumber !== nextNumber
+        || currentGroupCache.page !== pageData.page
+        || currentGroupCache.hasMore !== pageData.has_more;
 
       if (listChanged) {
-        rememberPullRequestItems(repoRoot, items, nextNumber);
+        rememberPullRequestGroup(repoRoot, group, items, pageData.page, pageData.has_more, nextNumber);
       }
 
       if (isCurrentRepo && (!options?.background || listChanged)) {
+        setActivePullRequestGroup(group);
         setPullRequests(items);
+        setPullRequestPage(pageData.page);
+        setPullRequestsHasMore(pageData.has_more);
         setSelectedPullRequestNumber(nextNumber);
         if (nextNumber == null) {
           setPullRequestDetail(null);
@@ -1378,7 +1929,7 @@ function App() {
       }
 
       if (nextNumber != null) {
-        if (isReviewWindow && isCurrentRepo) {
+        if (!options?.append && isReviewWindow && isCurrentRepo) {
           await loadPullRequestDetail(nextNumber, {
             force: options?.force || listChanged,
             background: options?.background,
@@ -1388,14 +1939,16 @@ function App() {
             accessToken,
           });
         } else {
-          rememberPullRequestSelection(repoRoot, nextNumber);
+          rememberPullRequestSelection(repoRoot, group, nextNumber);
         }
       } else if (isCurrentRepo && !options?.background) {
         setPullRequestDetail(null);
       }
     } catch (error) {
-      if (isCurrentRepo && !options?.background) {
+      if (isCurrentRepo && !options?.background && !options?.append) {
         setPullRequests([]);
+        setPullRequestPage(1);
+        setPullRequestsHasMore(false);
         setPullRequestDetail(null);
         setSelectedPullRequestNumber(null);
       }
@@ -1404,7 +1957,11 @@ function App() {
       }
     } finally {
       if (!options?.background && isCurrentRepo) {
-        setPullRequestsLoading(false);
+        if (options?.append) {
+          setPullRequestsLoadingMore(false);
+        } else {
+          setPullRequestsLoading(false);
+        }
       }
     }
   }
@@ -1428,7 +1985,7 @@ function App() {
     const repoRoot = repo.root;
     const cachedDetail = !options?.force && !options?.background ? pullRequestCacheRef.current[repoRoot]?.details[number] : null;
     if (cachedDetail) {
-      rememberPullRequestSelection(repoRoot, number);
+      rememberPullRequestSelection(repoRoot, activePullRequestGroup, number);
       setPullRequestDetail(cachedDetail);
       return cachedDetail;
     }
@@ -1474,9 +2031,40 @@ function App() {
   async function selectPullRequest(number: number) {
     setSelectedPullRequestNumber(number);
     if (activeRepo) {
-      rememberPullRequestSelection(activeRepo.root, number);
+      rememberPullRequestSelection(activeRepo.root, activePullRequestGroup, number);
     }
     await loadPullRequestDetail(number);
+  }
+
+  async function changePullRequestGroup(group: PullRequestGroupKey) {
+    if (!activeRepo || !activeProvider || !activeProviderToken.trim()) return;
+
+    setActivePullRequestGroup(group);
+
+    if (restorePullRequestCache(activeRepo.root, group)) {
+      return;
+    }
+
+    setPullRequests([]);
+    setPullRequestPage(1);
+    setPullRequestsHasMore(false);
+    setSelectedPullRequestNumber(null);
+    setPullRequestDetail(null);
+
+    await loadPullRequests(group, {
+      force: true,
+      preferredNumber: null,
+    });
+  }
+
+  async function loadMorePullRequests() {
+    if (!pullRequestsHasMore || pullRequestsLoadingMore) return;
+
+    await loadPullRequests(activePullRequestGroup, {
+      append: true,
+      force: true,
+      preferredNumber: selectedPullRequestNumber,
+    });
   }
 
   async function openExternalUrl(url: string) {
@@ -1494,7 +2082,7 @@ function App() {
   }
 
   async function approvePullRequest(kind: "review" | "test", number: number, currentStatus?: string | null) {
-    if (!activeProvider || !activeProviderToken.trim()) return;
+    if (!activeRepo || !activeProvider || !activeProviderToken.trim()) return;
 
     const resetting = kind === "review" ? canResetReview(currentStatus) : canResetTest(currentStatus);
     const command = kind === "review"
@@ -1521,12 +2109,48 @@ function App() {
 
     if (finished) {
       replaceRepo(finished);
-      await loadPullRequests(number, { force: true });
+      await loadPullRequests(activePullRequestGroup, { force: true, preferredNumber: number });
+    }
+  }
+
+  async function runPullRequestLifecycleAction(
+    command: "reopen_pull_request" | "close_pull_request" | "merge_pull_request",
+    number: number,
+  ) {
+    if (!activeRepo || !activeProvider || !activeProviderToken.trim()) return;
+
+    const success = command === "reopen_pull_request"
+      ? localizedStatusMessage("review.reopened")
+      : command === "close_pull_request"
+        ? localizedStatusMessage("review.closed")
+        : localizedStatusMessage("review.merged");
+    const working = command === "reopen_pull_request"
+      ? localizedStatusMessage("review.reopening")
+      : command === "close_pull_request"
+        ? localizedStatusMessage("review.closing")
+        : localizedStatusMessage("review.merging");
+    const updated = await runAction(
+      () =>
+        invoke<RepositoryInfo>(command, {
+          request: {
+            repo_path: activeRepo.root,
+            access_token: activeProviderToken.trim(),
+            number,
+          },
+        }),
+      success,
+      working,
+    );
+
+    if (updated) {
+      replaceRepo(updated);
+      await loadPullRequests(activePullRequestGroup, { force: true, preferredNumber: number });
+      void loadOpenPullRequestCount({ force: true, background: true, suppressErrors: true });
     }
   }
 
   async function cleanupCodeReviewWorktree(number: number) {
-    if (!activeProvider || !activeProviderToken.trim()) return false;
+    if (!activeRepo || !activeProvider || !activeProviderToken.trim()) return false;
 
     const updated = await runAction(
       () =>
@@ -1543,7 +2167,7 @@ function App() {
 
     if (updated) {
       replaceRepo(updated);
-      await loadPullRequests(number, { force: true });
+      await loadPullRequests(activePullRequestGroup, { force: true, preferredNumber: number });
       return true;
     }
 
@@ -1551,7 +2175,7 @@ function App() {
   }
 
   async function completePullRequestReview(pullRequest: PullRequestInfo) {
-    if (!activeProvider || !activeProviderToken.trim()) return;
+    if (!activeRepo || !activeProvider || !activeProviderToken.trim()) return;
     if (canResetReview(pullRequest.review_status)) return;
     if (pullRequest.review_action_allowed === false) {
       if (pullRequest.review_action_blocked_reason) {
@@ -1580,7 +2204,7 @@ function App() {
     if (!updated) return;
 
     replaceRepo(updated);
-    await loadPullRequests(pullRequest.number, { force: true });
+    await loadPullRequests(activePullRequestGroup, { force: true, preferredNumber: pullRequest.number });
 
     if (reviewCleanupPreference === "delete") {
       await cleanupCodeReviewWorktree(pullRequest.number);
@@ -1615,7 +2239,7 @@ function App() {
   }
 
   async function startCodeReview(pullRequest: PullRequestInfo) {
-    if (!activeProvider || !activeProviderToken.trim()) return;
+    if (!activeRepo || !activeProvider || !activeProviderToken.trim()) return;
 
     const prepared = await runAction(
       async () => {
@@ -1643,7 +2267,7 @@ function App() {
   }
 
   async function openReviewWindow() {
-    if (!activeProvider) return;
+    if (!activeRepo || !activeProvider) return;
 
     saveReviewWindowRepo(activeRepo.common_dir);
 
@@ -1702,6 +2326,33 @@ function App() {
 
       await hideCurrentWindow();
     }
+  }
+
+  function startReviewQueueResize(event: React.MouseEvent<HTMLButtonElement>) {
+    if (!isReviewWindow) return;
+
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = reviewQueueWidth;
+    const originalCursor = document.body.style.cursor;
+    const originalUserSelect = document.body.style.userSelect;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      setReviewQueueWidth(clampReviewQueueWidth(startWidth + delta));
+    };
+
+    const handleMouseUp = () => {
+      document.body.style.cursor = originalCursor;
+      document.body.style.userSelect = originalUserSelect;
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
   }
 
   async function scan(root = scanRoot) {
@@ -1926,7 +2577,8 @@ function App() {
   const activeRepoName = activeRepo ? activeRepo.name || basename(activeRepo.root) : t("toolbar.noRepo");
   const prunableCount = activeRepo?.worktrees.filter((worktree) => Boolean(worktree.prunable)).length ?? 0;
   function canRemoveWorktree(worktree: WorktreeInfo) {
-    return Boolean(activeRepo && worktree) && activeRepo.worktrees.length > 1;
+    if (!activeRepo) return false;
+    return Boolean(worktree) && activeRepo.worktrees.length > 1;
   }
 
   function getRemoveWorktreeDisabledReason(worktree: WorktreeInfo) {
@@ -1942,7 +2594,7 @@ function App() {
     return t("card.removeTitle");
   }
 
-  const cachedPullRequestCount = activeRepo ? pullRequestCacheRef.current[activeRepo.root]?.items.length : undefined;
+  const cachedPullRequestCount = activeRepo ? pullRequestCacheRef.current[activeRepo.root]?.openCount : undefined;
   const reviewQueueCount = activeProvider
     ? (activeProviderToken.trim() ? (cachedPullRequestCount != null ? String(cachedPullRequestCount) : "--") : "--")
     : "0";
@@ -1950,8 +2602,32 @@ function App() {
   const reviewRepoSummary = activeProvider?.full_name || activeRepo?.root || t("review.noRepo");
   const statusContext = isReviewWindow ? reviewRepoSummary : activeRepoName;
   const statusTask = busyLabel && busyLabel !== message ? busyLabel : "";
-  const showReviewStatus = supportsCapability(activeProvider, "approve_review") || pullRequests.some((item) => Boolean(item.review_status));
-  const showTestStatus = supportsCapability(activeProvider, "approve_test") || pullRequests.some((item) => Boolean(item.test_status));
+  const showReviewStatus = pullRequests.some((item) => Boolean(item.review_status))
+    || Boolean(activePullRequest?.review_status);
+  const showTestStatus = supportsCapability(activeProvider, "show_test_status")
+    && (
+      pullRequests.some((item) => Boolean(item.test_status))
+      || Boolean(activePullRequest?.test_status)
+    );
+  const showActivePullRequestReviewStatus = showReviewStatus && Boolean(activePullRequest?.review_status);
+  const showActivePullRequestTestStatus = showTestStatus && Boolean(activePullRequest?.test_status);
+  const showCommitPanel = supportsReviewCollection(activeProvider, "commits");
+  const showFilePanel = supportsReviewCollection(activeProvider, "files");
+  const showMemberPanel = supportsReviewCollection(activeProvider, "members");
+  const reviewQueueCountLabel = activeProvider && activeProviderToken.trim()
+    ? (activePullRequestGroup === "open" && openPullRequestCount != null
+      ? String(openPullRequestCount)
+      : `${pullRequests.length}${pullRequestsHasMore ? "+" : ""}`)
+    : "--";
+  const reviewGroupOptions = useMemo(() => [
+    { key: "open" as const, label: t("review.groupOpen") },
+    { key: "closed" as const, label: t("review.groupClosed") },
+    { key: "merged" as const, label: t("review.groupMerged") },
+    { key: "reverted" as const, label: t("review.groupReverted") },
+  ], [t]);
+  const reviewWindowShellStyle = isReviewWindow
+    ? ({ "--sidebar-width": `${reviewQueueWidth}px` } as React.CSSProperties)
+    : undefined;
   const activeRepoWebUrl = resolveProviderRepoWebUrl(activeProvider, activeRepoGiteeEdition);
   const activePullRequestWebUrl = activePullRequest
     ? resolvePullRequestWebUrl(activeProvider, activePullRequest.number, activePullRequest.web_url, activeRepoGiteeEdition)
@@ -1960,7 +2636,7 @@ function App() {
   return (
     <main className="desktopShell">
       <div className="desktopBackdrop backdropNorth" />
-      <div className={`desktopFrame ${isReviewWindow ? "reviewFrame" : "workspaceFrame"}`}>
+      <div className={`desktopFrame ${isReviewWindow ? "reviewFrame" : "workspaceFrame"}`} style={reviewWindowShellStyle}>
         <header className={`titleBar panelSurface ${isReviewWindow ? "reviewTitleBar" : ""}`}>
           <div className="titleBarBrand">
             <div className="brandMark">
@@ -2046,40 +2722,133 @@ function App() {
           </div>
         </header>
 
-        <aside className={`sidebar panelSurface ${isReviewWindow ? "reviewSidebar" : "workspaceSidebar"}`}>
+        <aside className={`sidebar panelSurface ${isReviewWindow ? "reviewSidebar reviewQueueSidebar" : "workspaceSidebar"}`}>
           <div className="sidebarSection">
-            <div className="sectionBar">
-              <span>{t("sidebar.repos")}</span>
-              <strong>{visibleRepositories.length}</strong>
-            </div>
-
             {isReviewWindow ? (
-              <div className="sidebarPathCard">
-                <span>{t("nav.reviews")}</span>
-                <strong>{t("review.listTitle")}</strong>
-              </div>
+              <div></div>
             ) : (
-              <div className="sidebarPathCard">
-                <span>{t("sidebar.scanDir")}</span>
-                <strong>{scanRoot}</strong>
-              </div>
-            )}
+              <>
+                <div className="sectionBar">
+                  <span>{t("sidebar.repos")}</span>
+                  <strong>{visibleRepositories.length}</strong>
+                </div>
 
-            {(hiddenRepositories.length > 0 || showHiddenRepos) && (
-              <button
-                type="button"
-                className={`toggleButton sidebarFilterToggle ${showHiddenRepos ? "active" : ""}`}
-                onClick={() => setShowHiddenRepos((current) => !current)}
-              >
-                {showHiddenRepos ? <EyeOff size={16} /> : <Eye size={16} />}
-                {showHiddenRepos ? t("sidebar.hideHidden") : t("sidebar.showHidden", hiddenRepositories.length)}
-              </button>
+                <div className="sidebarPathCard">
+                  <span>{t("sidebar.scanDir")}</span>
+                  <strong>{scanRoot}</strong>
+                </div>
+
+                {(hiddenRepositories.length > 0 || showHiddenRepos) && (
+                  <button
+                    type="button"
+                    className={`toggleButton sidebarFilterToggle ${showHiddenRepos ? "active" : ""}`}
+                    onClick={() => setShowHiddenRepos((current) => !current)}
+                  >
+                    {showHiddenRepos ? <EyeOff size={16} /> : <Eye size={16} />}
+                    {showHiddenRepos ? t("sidebar.hideHidden") : t("sidebar.showHidden", hiddenRepositories.length)}
+                  </button>
+                )}
+              </>
             )}
           </div>
 
           <div className="sidebarSection sidebarRepoSection">
-            {visibleRepositories.length === 0 ? (
-              <div className="emptyStrip">{allDisplayedReposHidden ? t("sidebar.allHidden") : isReviewWindow ? t("review.noRepo") : t("sidebar.noRepos")}</div>
+            {isReviewWindow ? (
+              <>
+                <div className="sectionBar">
+                  <span>{t("review.listTitle")}</span>
+                  <strong>{reviewQueueCountLabel}</strong>
+                </div>
+
+                {visibleRepositories.length === 0 ? (
+                  <div className="emptyStrip">{t("review.noRepo")}</div>
+                ) : !activeProvider ? (
+                  <div className="emptyStrip">{t("review.unavailable", activeProviderName)}</div>
+                ) : !activeProviderToken.trim() ? (
+                  <div className="emptyStrip">{t("review.authRequired", activeProviderName)}</div>
+                ) : (
+                  <div className="reviewGroupTabs" role="tablist" aria-label={t("review.listTitle")}>
+                    {reviewGroupOptions.map((group) => (
+                      <button
+                        key={group.key}
+                        type="button"
+                        className={`reviewGroupTab ${group.key === activePullRequestGroup ? "active" : ""}`}
+                        onClick={() => void changePullRequestGroup(group.key)}
+                        disabled={busy || pullRequestsLoading || pullRequestsLoadingMore}
+                      >
+                        {group.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {visibleRepositories.length === 0 ? null : !activeProvider ? null : !activeProviderToken.trim() ? null : pullRequestsLoading && pullRequests.length === 0 ? (
+                  <div className="emptyStrip">{t("review.loadingList")}</div>
+                ) : pullRequests.length === 0 ? (
+                  <div className="emptyStrip">{t("review.listEmpty")}</div>
+                ) : (
+                  <div className="reviewQueue reviewSidebarQueue">
+                    {pullRequests.map((item) => {
+                      const reviewDone = canResetReview(item.review_status);
+                      const testDone = canResetTest(item.test_status);
+                      const showItemReviewStatus = showReviewStatus && Boolean(item.review_status);
+                      const showItemTestStatus = showTestStatus && Boolean(item.test_status);
+
+                      return (
+                        <article
+                          key={item.number}
+                          className={`pullRequestItem ${item.number === selectedPullRequestNumber ? "active" : ""}`}
+                        >
+                          <button
+                            className="pullRequestSelect"
+                            onClick={() => void selectPullRequest(item.number)}
+                            disabled={busy}
+                          >
+                            <div className="pullRequestTitleRow">
+                              <strong>#{item.number} {item.title}</strong>
+                              <span className="statusPill emphasis">{formatStatusLabel(t, item.state, t("review.stateOpen"))}</span>
+                            </div>
+                            <span>{item.author}</span>
+                            <span>
+                              {(item.source_branch || t("gitee.branchUnknown"))}
+                              {" -> "}
+                              {(item.target_branch || t("gitee.branchUnknown"))}
+                            </span>
+                            <span>{formatDate(item.updated_at || item.created_at, locale)}</span>
+                            {(showItemReviewStatus || showItemTestStatus) && (
+                              <div className="pullRequestStatusRow">
+                                {showItemReviewStatus && (
+                                  <span className={`statusPill subtle ${reviewDone ? "success" : ""}`}>
+                                    {t("gitee.reviewStatus")}: {formatStatusLabel(t, item.review_status, t("review.unknown"))}
+                                  </span>
+                                )}
+                                {showItemTestStatus && (
+                                  <span className={`statusPill subtle ${testDone ? "success" : ""}`}>
+                                    {t("gitee.testStatus")}: {formatStatusLabel(t, item.test_status, t("review.unknown"))}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </button>
+                        </article>
+                      );
+                    })}
+                    {pullRequestsHasMore && (
+                      <button
+                        type="button"
+                        className="reviewLoadMoreButton"
+                        onClick={() => void loadMorePullRequests()}
+                        disabled={busy || pullRequestsLoadingMore}
+                      >
+                        {pullRequestsLoadingMore ? <Loader2 className="spin" size={16} /> : <ChevronDown size={16} />}
+                        {t("review.loadMore")}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : visibleRepositories.length === 0 ? (
+              <div className="emptyStrip">{allDisplayedReposHidden ? t("sidebar.allHidden") : t("sidebar.noRepos")}</div>
             ) : (
               <div className="sidebarRepoList">
                 {visibleRepositories.map((repo) => {
@@ -2128,6 +2897,16 @@ function App() {
               </div>
             )}
           </div>
+
+          {isReviewWindow && (
+            <button
+              type="button"
+              className="reviewSidebarResizeHandle"
+              onMouseDown={startReviewQueueResize}
+              aria-label={t("review.resizeSidebar")}
+              title={t("review.resizeSidebar")}
+            />
+          )}
         </aside>
 
         <section className={`mainStage ${isReviewWindow ? "reviewMainStage" : "workspaceMainStage"}`}>
@@ -2158,7 +2937,7 @@ function App() {
                         </button>
                         <button
                           className="headerActionButton emphasis"
-                          onClick={() => void loadPullRequests(selectedPullRequestNumber, { force: true })}
+                          onClick={() => void loadPullRequests(activePullRequestGroup, { force: true, preferredNumber: selectedPullRequestNumber })}
                           disabled={busy || pullRequestsLoading || !activeProviderToken.trim()}
                         >
                           {pullRequestsLoading ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
@@ -2168,19 +2947,13 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="metricStrip">
-                    <MetricTile label={t("dashboard.branch")} value={activeRepo.current_branch || t("card.detached")} />
-                    <MetricTile label={t("dashboard.worktrees")} value={activeRepo.worktrees.length} />
-                    <MetricTile label={t("dashboard.reviewQueue")} value={reviewQueueCount} />
-                    <MetricTile label={t("dashboard.prunable")} value={prunableCount} />
-                  </div>
                 </section>
 
                 <section className="sectionPanel panelSurface reviewWindowPanel">
                   <div className="panelHeaderRow">
                     <div>
-                      <h3>{t("review.listTitle")}</h3>
-                      <p>{t("review.listHint")}</p>
+                      <h3>{t("gitee.detailTitle")}</h3>
+                      <p>{activePullRequest ? reviewRepoSummary : t("review.selectHint")}</p>
                     </div>
                   </div>
 
@@ -2188,57 +2961,12 @@ function App() {
                     <div className="empty subtleEmpty">{t("review.unavailable", activeProviderName)}</div>
                   ) : !activeProviderToken.trim() ? (
                     <div className="empty subtleEmpty">{t("review.authRequired", activeProviderName)}</div>
-                  ) : pullRequestsLoading ? (
+                  ) : pullRequestsLoading && pullRequests.length === 0 ? (
                     <div className="empty subtleEmpty">{t("review.loadingList")}</div>
                   ) : pullRequests.length === 0 ? (
                     <div className="empty subtleEmpty">{t("review.listEmpty")}</div>
                   ) : (
-                    <div className="reviewWorkspace">
-                      <div className="reviewQueue">
-                        {pullRequests.map((item) => {
-                          const reviewDone = canResetReview(item.review_status);
-                          const testDone = canResetTest(item.test_status);
-
-                          return (
-                            <article
-                              key={item.number}
-                              className={`pullRequestItem ${item.number === selectedPullRequestNumber ? "active" : ""}`}
-                            >
-                              <button
-                                className="pullRequestSelect"
-                                onClick={() => void selectPullRequest(item.number)}
-                                disabled={busy}
-                              >
-                                <div className="pullRequestTitleRow">
-                                  <strong>#{item.number} {item.title}</strong>
-                                  <span className="statusPill emphasis">{humanizeStatus(item.state) || t("gitee.openFallback")}</span>
-                                </div>
-                                <span>{item.author}</span>
-                                <span>
-                                  {(item.source_branch || t("gitee.branchUnknown"))}
-                                  {" -> "}
-                                  {(item.target_branch || t("gitee.branchUnknown"))}
-                                </span>
-                                <span>{formatDate(item.updated_at || item.created_at, locale)}</span>
-                                <div className="pullRequestStatusRow">
-                                  {showReviewStatus && (
-                                    <span className={`statusPill subtle ${reviewDone ? "success" : ""}`}>
-                                      {t("gitee.reviewStatus")}: {humanizeStatus(item.review_status) || t("review.unknown")}
-                                    </span>
-                                  )}
-                                  {showTestStatus && (
-                                    <span className={`statusPill subtle ${testDone ? "success" : ""}`}>
-                                      {t("gitee.testStatus")}: {humanizeStatus(item.test_status) || t("review.unknown")}
-                                    </span>
-                                  )}
-                                </div>
-                              </button>
-                            </article>
-                          );
-                        })}
-                      </div>
-
-                      <div className="reviewDetailSurface">
+                    <div className="reviewDetailSurface reviewWindowDetailSurface">
                         {pullRequestDetailLoading ? (
                           <div className="empty subtleEmpty">{t("review.loadingDetail")}</div>
                         ) : activePullRequest ? (
@@ -2259,6 +2987,36 @@ function App() {
                                 <ExternalLink size={16} />
                                 {t("review.openWeb")}
                               </button>
+                              {supportsCapability(activeProvider, "merge_pull_request") && canMergePullRequest(activePullRequest.state) && (
+                                <button
+                                  className="reviewActionButton successTone"
+                                  onClick={() => void runPullRequestLifecycleAction("merge_pull_request", activePullRequest.number)}
+                                  disabled={busy}
+                                >
+                                  <Check size={16} />
+                                  {t("review.merge")}
+                                </button>
+                              )}
+                              {supportsCapability(activeProvider, "close_pull_request") && canClosePullRequest(activePullRequest.state) && (
+                                <button
+                                  className="reviewActionButton destructiveTone"
+                                  onClick={() => void runPullRequestLifecycleAction("close_pull_request", activePullRequest.number)}
+                                  disabled={busy}
+                                >
+                                  <X size={16} />
+                                  {t("review.close")}
+                                </button>
+                              )}
+                              {supportsCapability(activeProvider, "reopen_pull_request") && canReopenPullRequest(activePullRequest.state) && (
+                                <button
+                                  className="reviewActionButton subtleTone"
+                                  onClick={() => void runPullRequestLifecycleAction("reopen_pull_request", activePullRequest.number)}
+                                  disabled={busy}
+                                >
+                                  <RefreshCcw size={16} />
+                                  {t("review.reopen")}
+                                </button>
+                              )}
                               {supportsCapability(activeProvider, "code_review") && (
                                 <button className="reviewActionButton" onClick={() => void startCodeReview(activePullRequest)} disabled={busy}>
                                   <Code2 size={16} />
@@ -2326,16 +3084,16 @@ function App() {
 
                             <div className="detailStatusRow">
                               <span className="statusPill emphasis">
-                                {humanizeStatus(activePullRequest.state) || t("gitee.openFallback")}
+                                {formatStatusLabel(t, activePullRequest.state, t("review.stateOpen"))}
                               </span>
-                              {showReviewStatus && (
+                              {showActivePullRequestReviewStatus && (
                                 <span className={`statusPill subtle ${canResetReview(activePullRequest.review_status) ? "success" : ""}`}>
-                                  {t("gitee.reviewStatus")}: {humanizeStatus(activePullRequest.review_status) || t("review.unknown")}
+                                  {t("gitee.reviewStatus")}: {formatStatusLabel(t, activePullRequest.review_status, t("review.unknown"))}
                                 </span>
                               )}
-                              {showTestStatus && (
+                              {showActivePullRequestTestStatus && (
                                 <span className={`statusPill subtle ${canResetTest(activePullRequest.test_status) ? "success" : ""}`}>
-                                  {t("gitee.testStatus")}: {humanizeStatus(activePullRequest.test_status) || t("review.unknown")}
+                                  {t("gitee.testStatus")}: {formatStatusLabel(t, activePullRequest.test_status, t("review.unknown"))}
                                 </span>
                               )}
                             </div>
@@ -2375,11 +3133,150 @@ function App() {
                               <span>{t("gitee.description")}</span>
                               <p>{activePullRequest.body?.trim() || t("gitee.noDescription")}</p>
                             </div>
+
+                            {(showCommitPanel || showFilePanel || showMemberPanel) && (
+                              <div className="reviewInsightGrid">
+                                {showCommitPanel && (
+                                  <ReviewInsightPanel
+                                    title={t("review.commitsTitle")}
+                                    hint={t("review.commitsHint")}
+                                    loadingLabel={t("review.loadingCommits")}
+                                    emptyLabel={t("review.commitsEmpty")}
+                                    count={pullRequestCommitsState.items.length}
+                                    loading={pullRequestCommitsState.loading}
+                                    error={pullRequestCommitsState.error}
+                                  >
+                                    {pullRequestCommitsState.items.map((item) => {
+                                      const commitTitle = item.message?.trim().split(/\r?\n/, 1)[0] || item.sha;
+
+                                      return (
+                                        <article key={item.sha} className="reviewInsightItem">
+                                          <div className="reviewInsightRow">
+                                            <div className="reviewInsightContent">
+                                              <strong>{commitTitle}</strong>
+                                              <div className="reviewInsightMeta">
+                                                <span>{item.sha.slice(0, 12)}</span>
+                                                {item.author && <span>{item.author}</span>}
+                                                {item.authored_at && <span>{formatDate(item.authored_at, locale)}</span>}
+                                              </div>
+                                            </div>
+
+                                            {item.web_url && (
+                                              <button
+                                                type="button"
+                                                className="reviewInlineAction"
+                                                onClick={() => void openExternalUrl(item.web_url || "")}
+                                                disabled={busy}
+                                              >
+                                                <ExternalLink size={14} />
+                                              </button>
+                                            )}
+                                          </div>
+                                        </article>
+                                      );
+                                    })}
+                                  </ReviewInsightPanel>
+                                )}
+
+                                {showFilePanel && (
+                                  <ReviewInsightPanel
+                                    title={t("review.filesTitle")}
+                                    hint={t("review.filesHint")}
+                                    loadingLabel={t("review.loadingFiles")}
+                                    emptyLabel={t("review.filesEmpty")}
+                                    count={pullRequestFilesState.items.length}
+                                    loading={pullRequestFilesState.loading}
+                                    error={pullRequestFilesState.error}
+                                  >
+                                    {pullRequestFilesState.items.map((item) => {
+                                      const linkUrl = item.blob_url || item.raw_url || "";
+
+                                      return (
+                                        <article key={`${item.filename}-${item.status || "unknown"}`} className="reviewInsightItem">
+                                          <div className="reviewInsightRow">
+                                            <div className="reviewInsightContent">
+                                              <strong>{item.filename}</strong>
+                                              <div className="reviewInsightMeta reviewInsightBadges">
+                                                {item.status && <span className="miniBadge">{humanizeStatus(item.status)}</span>}
+                                                {item.additions != null && <span className="miniBadge">+{item.additions}</span>}
+                                                {item.deletions != null && <span className="miniBadge">-{item.deletions}</span>}
+                                                {item.changes != null && <span className="miniBadge">{item.changes} {t("review.changesLabel")}</span>}
+                                              </div>
+                                            </div>
+
+                                            {linkUrl && (
+                                              <button
+                                                type="button"
+                                                className="reviewInlineAction"
+                                                onClick={() => void openExternalUrl(linkUrl)}
+                                                disabled={busy}
+                                              >
+                                                <ExternalLink size={14} />
+                                              </button>
+                                            )}
+                                          </div>
+
+                                          {item.patch?.trim() ? (
+                                            <details className="patchPreview">
+                                              <summary>{t("review.patchPreview")}</summary>
+                                              <pre>{item.patch.trim()}</pre>
+                                            </details>
+                                          ) : (
+                                            <span className="reviewMetaHint">{t("review.patchEmpty")}</span>
+                                          )}
+                                        </article>
+                                      );
+                                    })}
+                                  </ReviewInsightPanel>
+                                )}
+
+                                {showMemberPanel && (
+                                  <ReviewInsightPanel
+                                    title={t("review.membersTitle")}
+                                    hint={t("review.membersHint")}
+                                    loadingLabel={t("review.loadingMembers")}
+                                    emptyLabel={t("review.membersEmpty")}
+                                    count={repositoryMembersState.items.length}
+                                    loading={repositoryMembersState.loading}
+                                    error={repositoryMembersState.error}
+                                  >
+                                    {repositoryMembersState.items.map((item) => {
+                                      const memberKey = `${item.username}-${item.display_name}`;
+                                      const role = item.role_name || item.permission || t("review.memberUnknownRole");
+
+                                      return (
+                                        <article key={memberKey} className="reviewInsightItem">
+                                          <div className="reviewInsightRow">
+                                            <div className="reviewInsightContent">
+                                              <strong>{item.display_name || item.username}</strong>
+                                              <div className="reviewInsightMeta">
+                                                <span>{item.username}</span>
+                                                <span>{role}</span>
+                                              </div>
+                                            </div>
+
+                                            {item.profile_url && (
+                                              <button
+                                                type="button"
+                                                className="reviewInlineAction"
+                                                onClick={() => void openExternalUrl(item.profile_url || "")}
+                                                disabled={busy}
+                                              >
+                                                <Users size={14} />
+                                              </button>
+                                            )}
+                                          </div>
+                                        </article>
+                                      );
+                                    })}
+                                  </ReviewInsightPanel>
+                                )}
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="empty subtleEmpty">{t("review.selectHint")}</div>
                         )}
-                      </div>
                     </div>
                   )}
                 </section>

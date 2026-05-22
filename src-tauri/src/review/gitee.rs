@@ -6,6 +6,7 @@ use crate::{
         CodeReviewResult, GiteeCodeReviewRequest, GiteePullRequestActionRequest,
         GiteePullRequestDetailRequest, GiteePullRequestInfo, GiteePullRequestListRequest,
         GiteeRepositoryInfo, PullRequestChangedFileInfo, PullRequestCommitInfo,
+        PullRequestPage,
         RepositoryInfo, RepositoryMemberInfo,
     },
     provider::require_gitee_repository,
@@ -19,9 +20,10 @@ use super::{
         get_pull_request as gitee_api_get_pull_request,
         list_pull_request_commits as gitee_api_list_pull_request_commits,
         list_pull_request_files as gitee_api_list_pull_request_files,
-        list_pull_requests as gitee_api_list_pull_requests,
+        list_pull_requests as gitee_api_list_pull_requests, merge_pull_request as gitee_api_merge_pull_request,
         list_repository_subscribers, reset_pull_request_review as gitee_api_reset_pull_request_review,
         reset_pull_request_test as gitee_api_reset_pull_request_test,
+        update_pull_request_state as gitee_api_update_pull_request_state,
     },
     shared::{
         cleanup_code_review_worktree_for_refs, extract_branch_name,
@@ -34,20 +36,84 @@ use super::{
 #[tauri::command]
 pub(crate) fn list_gitee_pull_requests(
     request: GiteePullRequestListRequest,
-) -> Result<Vec<GiteePullRequestInfo>, String> {
+) -> Result<PullRequestPage, String> {
     let repo_path = expand_home(&request.repo_path)?;
     let repo = require_gitee_repository(&repo_path)?;
     let access_token = require_access_token(&request.access_token)?;
-    let response = gitee_api_list_pull_requests(&repo, &access_token)?;
+    let requested_state = normalize_requested_pull_request_state(
+        request.state.as_deref().unwrap_or("open"),
+    );
+    let page = request.page.unwrap_or(1).max(1);
+    let per_page = request.per_page.unwrap_or(10).max(1);
 
-    let entries = response
-        .as_array()
-        .ok_or_else(|| "Unexpected Gitee PR list response.".to_string())?;
+    if requested_state == "open" || requested_state == "closed" {
+        let api_state = if requested_state == "open" { "open" } else { "closed" };
+        let response = gitee_api_list_pull_requests(&repo, &access_token, api_state, page, per_page)?;
+        let entries = response
+            .as_array()
+            .ok_or_else(|| "Unexpected Gitee PR list response.".to_string())?;
 
-    entries
-        .iter()
-        .map(|entry| map_gitee_pull_request(entry, &repo))
-        .collect()
+        return Ok(PullRequestPage {
+            state: requested_state.to_string(),
+            page,
+            per_page,
+            has_more: entries.len() as u32 >= per_page,
+            items: entries
+                .iter()
+                .map(|entry| map_gitee_pull_request(entry, &repo))
+                .collect::<Result<Vec<_>, _>>()?,
+        });
+    }
+
+    let (entries, has_more) = collect_gitee_filtered_page(&repo, &access_token, requested_state, page, per_page)?;
+
+    Ok(PullRequestPage {
+        state: requested_state.to_string(),
+        page,
+        per_page,
+        has_more,
+        items: entries
+            .iter()
+            .map(|entry| map_gitee_pull_request(entry, &repo))
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+pub(crate) fn count_gitee_pull_requests(
+    repo: &GiteeRepositoryInfo,
+    access_token: &str,
+    requested_state: &str,
+) -> Result<u64, String> {
+    let normalized_state = normalize_requested_pull_request_state(requested_state);
+    let api_state = if normalized_state == "open" {
+        "open"
+    } else if normalized_state == "closed" {
+        "closed"
+    } else {
+        "all"
+    };
+    let mut remote_page = 1;
+    let mut total = 0_u64;
+
+    loop {
+        let response = gitee_api_list_pull_requests(repo, access_token, api_state, remote_page, 100)?;
+        let entries = response
+            .as_array()
+            .ok_or_else(|| "Unexpected Gitee PR list response.".to_string())?;
+
+        total += entries
+            .iter()
+            .filter(|entry| gitee_pull_request_group(entry) == normalized_state)
+            .count() as u64;
+
+        if entries.len() < 100 {
+            break;
+        }
+
+        remote_page += 1;
+    }
+
+    Ok(total)
 }
 
 #[tauri::command]
@@ -110,6 +176,42 @@ pub(crate) fn reset_gitee_pull_request_test(
     let access_token = require_access_token(&request.access_token)?;
 
     gitee_api_reset_pull_request_test(&repo, &access_token, request.number)?;
+
+    inspect_repository(&repo_path)
+}
+
+pub(crate) fn reopen_gitee_pull_request(
+    request: GiteePullRequestActionRequest,
+) -> Result<RepositoryInfo, String> {
+    let repo_path = expand_home(&request.repo_path)?;
+    let repo = require_gitee_repository(&repo_path)?;
+    let access_token = require_access_token(&request.access_token)?;
+
+    gitee_api_update_pull_request_state(&repo, &access_token, request.number, "open")?;
+
+    inspect_repository(&repo_path)
+}
+
+pub(crate) fn close_gitee_pull_request(
+    request: GiteePullRequestActionRequest,
+) -> Result<RepositoryInfo, String> {
+    let repo_path = expand_home(&request.repo_path)?;
+    let repo = require_gitee_repository(&repo_path)?;
+    let access_token = require_access_token(&request.access_token)?;
+
+    gitee_api_update_pull_request_state(&repo, &access_token, request.number, "closed")?;
+
+    inspect_repository(&repo_path)
+}
+
+pub(crate) fn merge_gitee_pull_request(
+    request: GiteePullRequestActionRequest,
+) -> Result<RepositoryInfo, String> {
+    let repo_path = expand_home(&request.repo_path)?;
+    let repo = require_gitee_repository(&repo_path)?;
+    let access_token = require_access_token(&request.access_token)?;
+
+    gitee_api_merge_pull_request(&repo, &access_token, request.number)?;
 
     inspect_repository(&repo_path)
 }
@@ -245,6 +347,27 @@ fn map_gitee_pull_request(
         ],
     )
     .unwrap_or_else(|| "Unknown".to_string());
+    let state = normalize_gitee_pull_request_state(first_string(value, &[&["state"], &["status"]]));
+    let review_status = first_string(
+        value,
+        &[
+            &["review_status"],
+            &["reviewStatus"],
+            &["review_state"],
+            &["reviewState"],
+        ],
+    )
+    .or_else(|| (state.as_deref() == Some("open")).then(|| "pending".to_string()));
+    let test_status = first_string(
+        value,
+        &[
+            &["test_status"],
+            &["testStatus"],
+            &["test_state"],
+            &["testState"],
+        ],
+    )
+    .or_else(|| (state.as_deref() == Some("open")).then(|| "pending".to_string()));
 
     Ok(GiteePullRequestInfo {
         number,
@@ -259,7 +382,7 @@ fn map_gitee_pull_request(
                 &["author", "avatarUrl"],
             ],
         ),
-        state: first_string(value, &[&["state"], &["status"]]),
+        state,
         created_at: first_string(value, &[&["created_at"], &["createdAt"]]),
         updated_at: first_string(value, &[&["updated_at"], &["updatedAt"]]),
         web_url: extract_pull_request_web_url(value)
@@ -268,27 +391,89 @@ fn map_gitee_pull_request(
         target_branch: extract_branch_name(value, "base"),
         source_repo: extract_repo_full_name(value, "head"),
         target_repo: extract_repo_full_name(value, "base"),
-        review_status: first_string(
-            value,
-            &[
-                &["review_status"],
-                &["reviewStatus"],
-                &["review_state"],
-                &["reviewState"],
-            ],
-        ),
-        test_status: first_string(
-            value,
-            &[
-                &["test_status"],
-                &["testStatus"],
-                &["test_state"],
-                &["testState"],
-            ],
-        ),
+        review_status,
+        test_status,
         review_action_allowed: None,
         review_action_blocked_reason: None,
     })
+}
+
+fn normalize_gitee_pull_request_state(raw_state: Option<String>) -> Option<String> {
+    let state = raw_state?
+        .trim()
+        .to_lowercase()
+        .replace([' ', '-'], "_");
+
+    let normalized = match state.as_str() {
+        "open" | "opened" | "reopened" => "open",
+        "closed" | "close" => "closed",
+        "merged" | "merge" => "merged",
+        "reverted" | "revert" | "abandoned" | "declined" | "rejected" | "locked" => "reverted",
+        _ => state.as_str(),
+    };
+
+    Some(normalized.to_string())
+}
+
+fn gitee_pull_request_group(value: &Value) -> &'static str {
+    match normalize_gitee_pull_request_state(first_string(value, &[&["state"], &["status"]])).as_deref() {
+        Some("merged") => "merged",
+        Some("closed") => "closed",
+        Some("reverted") => "reverted",
+        _ => "open",
+    }
+}
+
+fn collect_gitee_filtered_page(
+    repo: &GiteeRepositoryInfo,
+    access_token: &str,
+    requested_state: &str,
+    page: u32,
+    per_page: u32,
+) -> Result<(Vec<Value>, bool), String> {
+    let start = ((page - 1) * per_page) as usize;
+    let end = start + per_page as usize;
+    let mut remote_page = 1;
+    let mut matched = 0_usize;
+    let mut items = Vec::new();
+
+    loop {
+        let response = gitee_api_list_pull_requests(repo, access_token, "all", remote_page, 100)?;
+        let entries = response
+            .as_array()
+            .ok_or_else(|| "Unexpected Gitee PR list response.".to_string())?;
+
+        for entry in entries {
+            if gitee_pull_request_group(entry) != requested_state {
+                continue;
+            }
+
+            if matched >= start && items.len() < per_page as usize {
+                items.push(entry.clone());
+            }
+
+            matched += 1;
+
+            if matched > end {
+                return Ok((items, true));
+            }
+        }
+
+        if entries.len() < 100 {
+            return Ok((items, false));
+        }
+
+        remote_page += 1;
+    }
+}
+
+fn normalize_requested_pull_request_state(requested_state: &str) -> &str {
+    match requested_state.trim().to_lowercase().as_str() {
+        "closed" => "closed",
+        "merged" => "merged",
+        "reverted" => "reverted",
+        _ => "open",
+    }
 }
 
 fn map_pull_request_commit(value: &Value) -> Result<PullRequestCommitInfo, String> {

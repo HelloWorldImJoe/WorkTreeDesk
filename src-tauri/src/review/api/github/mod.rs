@@ -5,6 +5,6 @@ mod repositories;
 pub(crate) use pull_requests::{
     approve_pull_request_review, get_pull_request, get_pull_request_commit_status,
     list_pull_request_commits, list_pull_request_files, list_pull_request_reviews,
-    list_pull_requests,
+    list_pull_requests, merge_pull_request, update_pull_request_state,
 };
 pub(crate) use repositories::{get_authenticated_user, list_repository_collaborators};
