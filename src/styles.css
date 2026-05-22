@@ -76,8 +76,10 @@ button {
 
 .sidebar {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr auto;
   min-width: 0;
+  overflow: hidden;
   border-right: 1px solid var(--line);
   background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 94%, var(--bg)) 0%, var(--panel) 100%);
 }
@@ -86,6 +88,7 @@ button {
   display: flex;
   align-items: center;
   gap: 10px;
+  width: calc(100% - 16px);
   min-height: 60px;
   margin: 10px 8px 6px;
   padding: 10px 10px 10px 12px;
@@ -164,6 +167,9 @@ button {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
   padding: 8px 8px 10px;
 }
 
@@ -178,15 +184,26 @@ button {
 .nav-item {
   position: relative;
   display: grid;
-  grid-template-columns: 20px 1fr auto;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   min-height: 34px;
   padding: 0 11px;
   border: 1px solid transparent;
   border-radius: 10px;
   color: var(--muted);
   text-align: left;
+}
+
+.nav-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar.collapsed .nav-item {
@@ -212,7 +229,12 @@ button {
 }
 
 .nav-item small {
+  justify-self: end;
   min-width: 20px;
+  max-width: 48px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   padding: 2px 6px;
   border-radius: 999px;
   background: var(--panel-2);
@@ -226,6 +248,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: 100%;
   padding: 8px 8px 12px;
   border-top: 1px solid var(--line);
   background: color-mix(in srgb, var(--panel) 92%, var(--bg));
@@ -326,7 +349,14 @@ body.resizing-pane {
 }
 
 .title-block {
-  min-width: 172px;
+  flex: 0 1 260px;
+  min-width: 0;
+}
+
+.title-block h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .eyebrow {
@@ -373,6 +403,11 @@ p {
   min-width: 0;
 }
 
+.scan-bar {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
 .path-input,
 .search-box,
 .input-with-button {
@@ -385,7 +420,10 @@ p {
 }
 
 .path-input {
-  width: min(45vw, 520px);
+  flex: 1 1 320px;
+  width: auto;
+  min-width: 180px;
+  max-width: 520px;
   padding-left: 4px;
 }
 
@@ -424,6 +462,34 @@ select {
 input::placeholder,
 textarea::placeholder {
   color: #69707a;
+}
+
+@media (max-width: 920px) {
+  .topbar {
+    gap: 10px;
+  }
+
+  .title-block {
+    flex-basis: 190px;
+  }
+
+  .scan-bar {
+    gap: 6px;
+  }
+
+  .path-input {
+    min-width: 120px;
+  }
+
+  .scan-bar .primary-button {
+    flex: 0 0 34px;
+    width: 34px;
+    padding-inline: 0;
+  }
+
+  .scan-bar .primary-button span {
+    display: none;
+  }
 }
 
 .icon-button,
@@ -475,6 +541,14 @@ textarea::placeholder {
   color: #fff;
 }
 
+.ghost-button span,
+.primary-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .icon-button:hover,
 .ghost-button:hover {
   background: var(--panel-3);
@@ -500,7 +574,8 @@ textarea::placeholder {
   top: calc(100% + 6px);
   right: 0;
   z-index: 40;
-  width: 188px;
+  width: 210px;
+  max-width: calc(100vw - 24px);
   padding: 6px;
   border: 1px solid var(--line);
   border-radius: 8px;

@@ -235,6 +235,15 @@ interface ReviewQueueState {
   loaded: boolean;
 }
 
+interface WorkspaceFilterPreferences {
+  searchQuery: string;
+  platformSelection: GitPlatformSelection;
+}
+
+interface ReviewFilterPreferences extends WorkspaceFilterPreferences {
+  queueFilter: ReviewQueueStatus;
+}
+
 const SCAN_RESULT_STORAGE_KEY = "worktree-desk.scanResult";
 const PINNED_REPOSITORIES_STORAGE_KEY = "workflow-studio.pinnedRepositories";
 const REPOSITORY_IDE_STORAGE_KEY = "workflow-studio.repositoryIde";
@@ -244,6 +253,8 @@ const LANGUAGE_STORAGE_KEY = "workflow-studio.language";
 const REVIEW_COMMENTS_STORAGE_KEY = "workflow-studio.reviewComments";
 const REVIEW_STATE_OVERRIDES_STORAGE_KEY = "workflow-studio.reviewStateOverrides";
 const CODE_REVIEW_CLEANUP_STORAGE_KEY = "workflow-studio.codeReviewCleanup";
+const WORKSPACE_FILTERS_STORAGE_KEY = "worktree-desk.workspaceFilters";
+const REVIEW_FILTERS_STORAGE_KEY = "worktree-desk.reviewFilters";
 const UPDATE_PROMPTED_VERSION_KEY = "worktree-desk.promptedUpdateVersion";
 const UPDATE_MENU_EVENT = "app://check-for-updates";
 const isTauri = "__TAURI_INTERNALS__" in window;
@@ -1132,9 +1143,10 @@ function App() {
   const [pinnedRepositories, setPinnedRepositories] = useState<RepositoryInfo[]>(loadPinnedRepositories);
   const [selectedRepoPath, setSelectedRepoPath] = useState(isTauri ? "" : demoRepositories[0].root);
   const [scanRoot, setScanRoot] = useState("/Users/joe/Documents/Work");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [initialWorkspaceFilters] = useState(loadWorkspaceFilterPreferences);
+  const [searchQuery, setSearchQuery] = useState(initialWorkspaceFilters.searchQuery);
   const deferredSearchQuery = useDeferredValue(searchQuery);
-  const [repoPlatformSelection, setRepoPlatformSelection] = useState<GitPlatformSelection>([]);
+  const [repoPlatformSelection, setRepoPlatformSelection] = useState<GitPlatformSelection>(initialWorkspaceFilters.platformSelection);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const [pendingUpdate, setPendingUpdate] = useState<PendingUpdate | null>(null);
@@ -1156,10 +1168,11 @@ function App() {
   );
   const [reviewStateOverrides, setReviewStateOverrides] = useState<Record<string, PullRequestViewModel["state"]>>(loadReviewStateOverrides);
   const [selectedPr, setSelectedPr] = useState<number | null>(isTauri ? null : demoPullRequests[0].number);
-  const [reviewQueueFilter, setReviewQueueFilter] = useState<ReviewQueueStatus>("open");
-  const [reviewSearchQuery, setReviewSearchQuery] = useState("");
+  const [initialReviewFilters] = useState(loadReviewFilterPreferences);
+  const [reviewQueueFilter, setReviewQueueFilter] = useState<ReviewQueueStatus>(initialReviewFilters.queueFilter);
+  const [reviewSearchQuery, setReviewSearchQuery] = useState(initialReviewFilters.searchQuery);
   const deferredReviewSearchQuery = useDeferredValue(reviewSearchQuery);
-  const [reviewPlatformSelection, setReviewPlatformSelection] = useState<GitPlatformSelection>([]);
+  const [reviewPlatformSelection, setReviewPlatformSelection] = useState<GitPlatformSelection>(initialReviewFilters.platformSelection);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewFilesLoading, setReviewFilesLoading] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
@@ -1260,6 +1273,21 @@ function App() {
   useEffect(() => {
     document.documentElement.lang = language;
   }, [language]);
+
+  useEffect(() => {
+    persistWorkspaceFilterPreferences({
+      searchQuery,
+      platformSelection: repoPlatformSelection,
+    });
+  }, [searchQuery, repoPlatformSelection]);
+
+  useEffect(() => {
+    persistReviewFilterPreferences({
+      searchQuery: reviewSearchQuery,
+      platformSelection: reviewPlatformSelection,
+      queueFilter: reviewQueueFilter,
+    });
+  }, [reviewSearchQuery, reviewPlatformSelection, reviewQueueFilter]);
 
   useEffect(() => {
     reviewStateOverridesRef.current = reviewStateOverrides;
@@ -1389,8 +1417,7 @@ function App() {
       return;
     }
 
-    setReviewQueueFilter("open");
-    void loadReviewQueue("open", {
+    void loadReviewQueue(reviewQueueFilter, {
       repo: selectedRepo,
       accessToken: activeProviderToken,
       force: true,
@@ -2443,7 +2470,7 @@ function Topbar({
           <button className="icon-button" onClick={onScan} title={t("topbar.scanDirectory")} disabled={loading}>
             {loading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
           </button>
-          <button className="primary-button" onClick={onOpenProjectModal}>
+          <button className="primary-button" onClick={onOpenProjectModal} title={t("topbar.newProject")}>
             <Plus size={16} />
             <span>{t("topbar.newProject")}</span>
           </button>
@@ -4171,6 +4198,87 @@ function persistProviderTokenPreferences(preferences: Record<ReviewProviderKind,
   }
 }
 
+function loadWorkspaceFilterPreferences(): WorkspaceFilterPreferences {
+  try {
+    const raw = window.localStorage.getItem(WORKSPACE_FILTERS_STORAGE_KEY);
+    if (!raw) return createDefaultWorkspaceFilterPreferences();
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return createDefaultWorkspaceFilterPreferences();
+
+    return {
+      searchQuery: getStoredFilterQuery((parsed as Record<string, unknown>).searchQuery),
+      platformSelection: getStoredPlatformSelection((parsed as Record<string, unknown>).platformSelection, true),
+    };
+  } catch {
+    return createDefaultWorkspaceFilterPreferences();
+  }
+}
+
+function persistWorkspaceFilterPreferences(preferences: WorkspaceFilterPreferences) {
+  try {
+    window.localStorage.setItem(WORKSPACE_FILTERS_STORAGE_KEY, JSON.stringify({
+      searchQuery: preferences.searchQuery,
+      platformSelection: normalizePlatformSelection(preferences.platformSelection, true),
+    }));
+  } catch {
+    // Workspace filters remain available for the current session when persistence is unavailable.
+  }
+}
+
+function loadReviewFilterPreferences(): ReviewFilterPreferences {
+  try {
+    const raw = window.localStorage.getItem(REVIEW_FILTERS_STORAGE_KEY);
+    if (!raw) return createDefaultReviewFilterPreferences();
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return createDefaultReviewFilterPreferences();
+
+    const values = parsed as Record<string, unknown>;
+    return {
+      searchQuery: getStoredFilterQuery(values.searchQuery),
+      platformSelection: getStoredPlatformSelection(values.platformSelection, false),
+      queueFilter: isReviewQueueStatus(values.queueFilter) ? values.queueFilter : "open",
+    };
+  } catch {
+    return createDefaultReviewFilterPreferences();
+  }
+}
+
+function persistReviewFilterPreferences(preferences: ReviewFilterPreferences) {
+  try {
+    window.localStorage.setItem(REVIEW_FILTERS_STORAGE_KEY, JSON.stringify({
+      searchQuery: preferences.searchQuery,
+      platformSelection: normalizePlatformSelection(preferences.platformSelection, false),
+      queueFilter: preferences.queueFilter,
+    }));
+  } catch {
+    // Review filters remain available for the current session when persistence is unavailable.
+  }
+}
+
+function createDefaultWorkspaceFilterPreferences(): WorkspaceFilterPreferences {
+  return {
+    searchQuery: "",
+    platformSelection: [],
+  };
+}
+
+function createDefaultReviewFilterPreferences(): ReviewFilterPreferences {
+  return {
+    ...createDefaultWorkspaceFilterPreferences(),
+    queueFilter: "open",
+  };
+}
+
+function getStoredFilterQuery(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function getStoredPlatformSelection(value: unknown, includeLocal: boolean): GitPlatformSelection {
+  return Array.isArray(value)
+    ? normalizePlatformSelection(value.filter(isGitPlatformKey), includeLocal)
+    : [];
+}
+
 function loadLanguagePreference(): AppLanguage {
   try {
     const raw = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
@@ -4283,6 +4391,14 @@ function savePromptedUpdateVersion(version: string) {
 
 function isAppLanguage(value: unknown): value is AppLanguage {
   return LANGUAGE_OPTIONS.some((option) => option.value === value);
+}
+
+function isGitPlatformKey(value: unknown): value is GitPlatformKey {
+  return PLATFORM_GROUP_ORDER.includes(value as GitPlatformKey);
+}
+
+function isReviewQueueStatus(value: unknown): value is ReviewQueueStatus {
+  return REVIEW_QUEUE_FILTERS.some((filter) => filter.value === value);
 }
 
 function isCodeReviewCleanupPreference(value: unknown): value is CodeReviewCleanupPreference {
