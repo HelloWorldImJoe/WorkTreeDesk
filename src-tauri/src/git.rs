@@ -33,6 +33,21 @@ pub(crate) fn git_stdout(repo_path: &Path, args: &[&str]) -> Result<String, Stri
     run_git(repo_path, &args)
 }
 
+pub(crate) fn git_clone(remote_url: &str, target_path: &Path) -> Result<String, String> {
+    let output = Command::new("git")
+        .arg("clone")
+        .arg(remote_url)
+        .arg(target_path)
+        .output()
+        .map_err(|error| format!("Failed to run git clone: {error}"))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
 pub(crate) fn list_git_remotes(repo_path: &Path) -> Result<Vec<GitRemoteInfo>, String> {
     let output = git_stdout(repo_path, &["remote", "-v"])?;
     let mut remotes: BTreeMap<String, GitRemoteInfo> = BTreeMap::new();

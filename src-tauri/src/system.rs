@@ -1,12 +1,20 @@
-use std::{path::Path, process::Command};
+use std::{
+    io::Write,
+    path::Path,
+    process::{Command, Stdio},
+};
 
 use crate::{
-    common::{clean_optional_string, clean_required, expand_home, path_arg},
+    common::{clean_optional_string, clean_required, expand_home, path_arg, run_blocking},
     models::{OpenPathRequest, OpenUrlRequest},
 };
 
 #[tauri::command]
-pub(crate) fn open_path(request: OpenPathRequest) -> Result<(), String> {
+pub(crate) async fn open_path(request: OpenPathRequest) -> Result<(), String> {
+    run_blocking(move || open_path_sync(request)).await
+}
+
+fn open_path_sync(request: OpenPathRequest) -> Result<(), String> {
     let path = expand_home(&request.path)?;
     if !path.exists() {
         return Err(format!("Path does not exist: {}", path.display()));
@@ -17,14 +25,18 @@ pub(crate) fn open_path(request: OpenPathRequest) -> Result<(), String> {
         "custom" => {
             let command = clean_optional_string(&request.custom_command)
                 .ok_or_else(|| "Custom command is required.".to_string())?;
-            run_process(&command, &[path_arg(&path)])
+            spawn_process(&command, &[path_arg(&path)])
         }
         editor => open_editor(editor, &path),
     }
 }
 
 #[tauri::command]
-pub(crate) fn open_url(request: OpenUrlRequest) -> Result<(), String> {
+pub(crate) async fn open_url(request: OpenUrlRequest) -> Result<(), String> {
+    run_blocking(move || open_url_sync(request)).await
+}
+
+fn open_url_sync(request: OpenUrlRequest) -> Result<(), String> {
     let url = clean_required(&request.url, "URL")?;
 
     match request.editor.as_deref() {
@@ -33,11 +45,67 @@ pub(crate) fn open_url(request: OpenUrlRequest) -> Result<(), String> {
     }
 }
 
-fn run_process(command: &str, args: &[String]) -> Result<(), String> {
-    let status = Command::new(command)
+#[tauri::command]
+pub(crate) async fn copy_text(text: String) -> Result<(), String> {
+    run_blocking(move || copy_text_sync(text)).await
+}
+
+fn copy_text_sync(text: String) -> Result<(), String> {
+    if text.is_empty() {
+        return Err("Nothing to copy.".to_string());
+    }
+
+    if cfg!(target_os = "macos") {
+        pipe_process("pbcopy", &[], &text)
+    } else if cfg!(target_os = "windows") {
+        pipe_process(
+            "powershell",
+            &[
+                "-NoProfile".to_string(),
+                "-Command".to_string(),
+                "Set-Clipboard -Value ([Console]::In.ReadToEnd())".to_string(),
+            ],
+            &text,
+        )
+    } else {
+        pipe_process("wl-copy", &[], &text)
+            .or_else(|_| pipe_process("xclip", &["-selection".into(), "clipboard".into()], &text))
+    }
+}
+
+fn spawn_process(command: &str, args: &[String]) -> Result<(), String> {
+    let mut child = Command::new(command)
         .args(args)
-        .status()
+        .spawn()
         .map_err(|error| format!("Failed to launch {command}: {error}"))?;
+
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+
+    Ok(())
+}
+
+fn pipe_process(command: &str, args: &[String], input: &str) -> Result<(), String> {
+    let mut child = Command::new(command)
+        .args(args)
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Failed to launch {command}: {error}"))?;
+
+    {
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| format!("Failed to open stdin for {command}"))?;
+        stdin
+            .write_all(input.as_bytes())
+            .map_err(|error| format!("Failed to write clipboard data to {command}: {error}"))?;
+    }
+
+    let status = child
+        .wait()
+        .map_err(|error| format!("Failed waiting for {command}: {error}"))?;
 
     if status.success() {
         Ok(())
@@ -48,18 +116,18 @@ fn run_process(command: &str, args: &[String]) -> Result<(), String> {
 
 fn open_file_manager(path: &Path) -> Result<(), String> {
     if cfg!(target_os = "windows") {
-        run_process("explorer", &[path_arg(path)])
+        spawn_process("explorer", &[path_arg(path)])
     } else if cfg!(target_os = "macos") {
-        run_process("open", &[path_arg(path)])
+        spawn_process("open", &[path_arg(path)])
     } else {
-        run_process("xdg-open", &[path_arg(path)])
+        spawn_process("xdg-open", &[path_arg(path)])
     }
 }
 
 fn open_editor(editor: &str, path: &Path) -> Result<(), String> {
     if cfg!(target_os = "macos") {
         if let Some(app_name) = mac_editor_app(editor) {
-            if run_process("open", &["-a".into(), app_name.into(), path_arg(path)]).is_ok() {
+            if spawn_process("open", &["-a".into(), app_name.into(), path_arg(path)]).is_ok() {
                 return Ok(());
             }
         }
@@ -67,7 +135,7 @@ fn open_editor(editor: &str, path: &Path) -> Result<(), String> {
 
     let mut errors = Vec::new();
     for command in editor_commands(editor) {
-        match run_process(command, &[path_arg(path)]) {
+        match spawn_process(command, &[path_arg(path)]) {
             Ok(()) => return Ok(()),
             Err(error) => errors.push(error),
         }
@@ -85,21 +153,21 @@ fn open_editor(editor: &str, path: &Path) -> Result<(), String> {
 
 fn open_external_url(url: &str) -> Result<(), String> {
     if cfg!(target_os = "windows") {
-        run_process("explorer", &[url.to_string()])
+        spawn_process("explorer", &[url.to_string()])
     } else if cfg!(target_os = "macos") {
-        run_process("open", &[url.to_string()])
+        spawn_process("open", &[url.to_string()])
     } else {
-        run_process("xdg-open", &[url.to_string()])
+        spawn_process("xdg-open", &[url.to_string()])
     }
 }
 
 fn open_url_in_vscode(url: &str) -> Result<(), String> {
-    if run_process("code", &["--open-url".to_string(), url.to_string()]).is_ok() {
+    if spawn_process("code", &["--open-url".to_string(), url.to_string()]).is_ok() {
         return Ok(());
     }
 
     if cfg!(target_os = "macos")
-        && run_process(
+        && spawn_process(
             "open",
             &[
                 "-a".to_string(),

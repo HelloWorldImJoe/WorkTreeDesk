@@ -4,7 +4,7 @@ use reqwest::blocking::Client;
 use semver::Version;
 use serde::Deserialize;
 
-use crate::models::ReleaseCheckResult;
+use crate::{common::run_blocking, models::ReleaseCheckResult};
 
 pub(crate) const UPDATE_MENU_ID: &str = "app.check-for-updates";
 pub(crate) const UPDATE_MENU_EVENT: &str = "app://check-for-updates";
@@ -30,7 +30,13 @@ struct GithubReleaseResponse {
 }
 
 #[tauri::command]
-pub(crate) fn check_for_app_update(app: tauri::AppHandle) -> Result<ReleaseCheckResult, String> {
+pub(crate) async fn check_for_app_update(
+    app: tauri::AppHandle,
+) -> Result<ReleaseCheckResult, String> {
+    run_blocking(move || check_for_app_update_sync(app)).await
+}
+
+fn check_for_app_update_sync(app: tauri::AppHandle) -> Result<ReleaseCheckResult, String> {
     let package_version = app.package_info().version.to_string();
     let channel = current_release_channel(&package_version);
     let current_version = normalize_release_version(&package_version);

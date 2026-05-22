@@ -14,11 +14,7 @@ impl<'a> GithubApiClient<'a> {
         Self { access_token }
     }
 
-    pub(crate) fn get(
-        &self,
-        path: &str,
-        query: Vec<(String, String)>,
-    ) -> Result<Value, String> {
+    pub(crate) fn get(&self, path: &str, query: Vec<(String, String)>) -> Result<Value, String> {
         let response = api_client("GitHub")?
             .get(format!("{GITHUB_API_BASE}{path}"))
             .bearer_auth(self.access_token)

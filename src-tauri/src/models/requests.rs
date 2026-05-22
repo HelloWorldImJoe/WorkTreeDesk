@@ -20,6 +20,13 @@ pub(crate) struct RemoveWorktreeRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub(crate) struct CloneRepositoryRequest {
+    pub(crate) remote_url: String,
+    pub(crate) parent_dir: String,
+    pub(crate) directory_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub(crate) struct OpenPathRequest {
     pub(crate) path: String,
     pub(crate) editor: String,
@@ -46,6 +53,14 @@ pub(crate) struct ReviewProviderPullRequestRequest {
     pub(crate) repo_path: String,
     pub(crate) access_token: String,
     pub(crate) number: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ReviewProviderPullRequestFileRequest {
+    pub(crate) repo_path: String,
+    pub(crate) access_token: String,
+    pub(crate) number: i64,
+    pub(crate) filename: String,
 }
 
 /// 审批、重置、测试通过等动作共用的请求体。

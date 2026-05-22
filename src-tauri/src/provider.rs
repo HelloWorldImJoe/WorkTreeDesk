@@ -51,7 +51,11 @@ pub(crate) fn detect_gitee_repository(repo_path: &Path) -> Option<GiteeRepositor
     detect_review_provider(repo_path).filter(|provider| provider.kind == ReviewProviderKind::Gitee)
 }
 
-pub(crate) fn find_remote_name_for_repo(repo_path: &Path, owner: &str, repo: &str) -> Option<String> {
+pub(crate) fn find_remote_name_for_repo(
+    repo_path: &Path,
+    owner: &str,
+    repo: &str,
+) -> Option<String> {
     list_git_remotes(repo_path)
         .ok()?
         .into_iter()
@@ -109,7 +113,10 @@ pub(crate) fn gitee_https_path(url: &str) -> Option<&str> {
         return None;
     };
 
-    let without_userinfo = remainder.rsplit_once('@').map(|(_, rest)| rest).unwrap_or(remainder);
+    let without_userinfo = remainder
+        .rsplit_once('@')
+        .map(|(_, rest)| rest)
+        .unwrap_or(remainder);
     without_userinfo.strip_prefix("gitee.com/")
 }
 
@@ -187,7 +194,10 @@ fn parse_git_remote_host_and_path(url: &str) -> Option<(String, String)> {
     }
 
     if let Some(rest) = trimmed.strip_prefix("ssh://") {
-        let rest = rest.rsplit_once('@').map(|(_, suffix)| suffix).unwrap_or(rest);
+        let rest = rest
+            .rsplit_once('@')
+            .map(|(_, suffix)| suffix)
+            .unwrap_or(rest);
         let (host, path) = rest.split_once('/')?;
         return Some((host.to_string(), path.to_string()));
     }
@@ -200,7 +210,10 @@ fn parse_git_remote_host_and_path(url: &str) -> Option<(String, String)> {
         return None;
     };
 
-    let rest = rest.rsplit_once('@').map(|(_, suffix)| suffix).unwrap_or(rest);
+    let rest = rest
+        .rsplit_once('@')
+        .map(|(_, suffix)| suffix)
+        .unwrap_or(rest);
     let (host, path) = rest.split_once('/')?;
     Some((host.to_string(), path.to_string()))
 }

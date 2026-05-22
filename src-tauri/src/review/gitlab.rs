@@ -5,8 +5,7 @@ use crate::{
     models::{
         CodeReviewResult, GiteePullRequestActionRequest, PullRequestBranchRef,
         PullRequestChangedFileInfo, PullRequestCommitInfo, PullRequestInfo, PullRequestPage,
-        RepositoryInfo,
-        RepositoryMemberInfo, ReviewProviderInfo,
+        RepositoryInfo, RepositoryMemberInfo, ReviewProviderInfo,
     },
     repository::inspect_repository,
 };
@@ -20,8 +19,9 @@ use super::{
         get_project as gitlab_api_get_project,
         list_merge_request_changes as gitlab_api_list_merge_request_changes,
         list_merge_request_commits as gitlab_api_list_merge_request_commits,
-        list_merge_requests as gitlab_api_list_merge_requests, merge_merge_request as gitlab_api_merge_merge_request,
+        list_merge_requests as gitlab_api_list_merge_requests,
         list_project_members as gitlab_api_list_project_members,
+        merge_merge_request as gitlab_api_merge_merge_request,
         unapprove_merge_request as gitlab_api_unapprove_merge_request,
         update_merge_request_state as gitlab_api_update_merge_request_state,
     },
@@ -44,7 +44,8 @@ pub(crate) fn list_gitlab_merge_requests_by_state(
     let per_page = per_page.max(1);
 
     if normalized_state == "open" {
-        let response = gitlab_api_list_merge_requests(provider, access_token, "opened", page, per_page)?;
+        let response =
+            gitlab_api_list_merge_requests(provider, access_token, "opened", page, per_page)?;
         let current_user_id = gitlab_current_user_id(provider, access_token)?;
         let entries = response
             .as_array()
@@ -67,7 +68,10 @@ pub(crate) fn list_gitlab_merge_requests_by_state(
                         current_user_id,
                     )?
                     .or_else(|| Some("pending".to_string()));
-                    let test_status = first_string(entry, &[&["head_pipeline", "status"], &["pipeline", "status"]]);
+                    let test_status = first_string(
+                        entry,
+                        &[&["head_pipeline", "status"], &["pipeline", "status"]],
+                    );
                     map_gitlab_merge_request(entry, provider, review_status, test_status)
                 })
                 .collect::<Result<Vec<_>, _>>()?,
@@ -96,7 +100,10 @@ pub(crate) fn list_gitlab_merge_requests_by_state(
         items: entries
             .iter()
             .map(|entry| {
-                let test_status = first_string(entry, &[&["head_pipeline", "status"], &["pipeline", "status"]]);
+                let test_status = first_string(
+                    entry,
+                    &[&["head_pipeline", "status"], &["pipeline", "status"]],
+                );
                 map_gitlab_merge_request(entry, provider, None, test_status)
             })
             .collect::<Result<Vec<_>, _>>()?,
@@ -119,7 +126,8 @@ pub(crate) fn count_gitlab_merge_requests(
     let mut total = 0_u64;
 
     loop {
-        let response = gitlab_api_list_merge_requests(provider, access_token, api_state, remote_page, 100)?;
+        let response =
+            gitlab_api_list_merge_requests(provider, access_token, api_state, remote_page, 100)?;
         let entries = response
             .as_array()
             .ok_or_else(|| "Unexpected GitLab merge request response.".to_string())?;
@@ -148,8 +156,10 @@ pub(crate) fn get_gitlab_merge_request_detail(
     let state = gitlab_merge_request_state(&response);
     let review_status = gitlab_current_user_review_status(provider, access_token, number)?
         .or_else(|| (state.as_deref() == Some("open")).then(|| "pending".to_string()));
-    let test_status =
-        first_string(&response, &[&["head_pipeline", "status"], &["pipeline", "status"]]);
+    let test_status = first_string(
+        &response,
+        &[&["head_pipeline", "status"], &["pipeline", "status"]],
+    );
 
     map_gitlab_merge_request(&response, provider, review_status, test_status)
 }
@@ -181,7 +191,7 @@ pub(crate) fn list_gitlab_pull_request_files(
         .and_then(Value::as_array)
         .ok_or_else(|| "Unexpected GitLab merge request changed-file response.".to_string())?
         .iter()
-    .map(map_pull_request_file)
+        .map(map_pull_request_file)
         .collect()
 }
 
@@ -357,7 +367,9 @@ fn gitlab_review_status_for_user_id(
         .get("approved_by")
         .and_then(Value::as_array)
         .is_some_and(|entries| {
-            entries.iter().any(|entry| first_i64(entry, &[&["user", "id"], &["id"]]) == Some(user_id))
+            entries
+                .iter()
+                .any(|entry| first_i64(entry, &[&["user", "id"], &["id"]]) == Some(user_id))
         });
 
     Ok(if approved {
@@ -408,7 +420,8 @@ fn collect_gitlab_filtered_page(
     let mut items = Vec::new();
 
     loop {
-        let response = gitlab_api_list_merge_requests(provider, access_token, api_state, remote_page, 100)?;
+        let response =
+            gitlab_api_list_merge_requests(provider, access_token, api_state, remote_page, 100)?;
         let entries = response
             .as_array()
             .ok_or_else(|| "Unexpected GitLab merge request response.".to_string())?;
@@ -515,19 +528,18 @@ fn map_pull_request_commit(value: &Value) -> Result<PullRequestCommitInfo, Strin
         ),
         authored_at: first_string(
             value,
-            &[
-                &["authored_date"],
-                &["created_at"],
-                &["committed_date"],
-            ],
+            &[&["authored_date"], &["created_at"], &["committed_date"]],
         ),
         web_url: first_string(value, &[&["web_url"], &["url"]]),
     })
 }
 
 fn map_pull_request_file(value: &Value) -> Result<PullRequestChangedFileInfo, String> {
-    let filename = first_string(value, &[&["new_path"], &["old_path"], &["filename"], &["path"]])
-        .ok_or_else(|| "GitLab merge request file entry is missing its filename.".to_string())?;
+    let filename = first_string(
+        value,
+        &[&["new_path"], &["old_path"], &["filename"], &["path"]],
+    )
+    .ok_or_else(|| "GitLab merge request file entry is missing its filename.".to_string())?;
     let patch = first_string(value, &[&["diff"], &["patch"]]);
     let (additions, deletions) = patch
         .as_deref()
@@ -553,8 +565,8 @@ fn map_pull_request_file(value: &Value) -> Result<PullRequestChangedFileInfo, St
 fn map_repository_member(value: &Value) -> Result<RepositoryMemberInfo, String> {
     let username = first_string(value, &[&["username"], &["name"]])
         .ok_or_else(|| "GitLab repository member entry is missing its identity.".to_string())?;
-    let display_name = first_string(value, &[&["name"], &["username"]])
-        .unwrap_or_else(|| username.clone());
+    let display_name =
+        first_string(value, &[&["name"], &["username"]]).unwrap_or_else(|| username.clone());
     let role = first_i64(value, &[&["access_level"]]).and_then(gitlab_access_level_name);
 
     Ok(RepositoryMemberInfo {

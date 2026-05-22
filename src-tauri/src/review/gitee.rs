@@ -1,12 +1,11 @@
 use serde_json::Value;
 
 use crate::{
-    common::{expand_home, path_arg},
+    common::{expand_home, path_arg, run_blocking},
     models::{
         CodeReviewResult, GiteeCodeReviewRequest, GiteePullRequestActionRequest,
         GiteePullRequestDetailRequest, GiteePullRequestInfo, GiteePullRequestListRequest,
-        GiteeRepositoryInfo, PullRequestChangedFileInfo, PullRequestCommitInfo,
-        PullRequestPage,
+        GiteeRepositoryInfo, PullRequestChangedFileInfo, PullRequestCommitInfo, PullRequestPage,
         RepositoryInfo, RepositoryMemberInfo,
     },
     provider::require_gitee_repository,
@@ -20,8 +19,9 @@ use super::{
         get_pull_request as gitee_api_get_pull_request,
         list_pull_request_commits as gitee_api_list_pull_request_commits,
         list_pull_request_files as gitee_api_list_pull_request_files,
-        list_pull_requests as gitee_api_list_pull_requests, merge_pull_request as gitee_api_merge_pull_request,
-        list_repository_subscribers, reset_pull_request_review as gitee_api_reset_pull_request_review,
+        list_pull_requests as gitee_api_list_pull_requests, list_repository_subscribers,
+        merge_pull_request as gitee_api_merge_pull_request,
+        reset_pull_request_review as gitee_api_reset_pull_request_review,
         reset_pull_request_test as gitee_api_reset_pull_request_test,
         update_pull_request_state as gitee_api_update_pull_request_state,
     },
@@ -34,21 +34,31 @@ use super::{
 };
 
 #[tauri::command]
-pub(crate) fn list_gitee_pull_requests(
+pub(crate) async fn list_gitee_pull_requests(
+    request: GiteePullRequestListRequest,
+) -> Result<PullRequestPage, String> {
+    run_blocking(move || list_gitee_pull_requests_sync(request)).await
+}
+
+pub(crate) fn list_gitee_pull_requests_sync(
     request: GiteePullRequestListRequest,
 ) -> Result<PullRequestPage, String> {
     let repo_path = expand_home(&request.repo_path)?;
     let repo = require_gitee_repository(&repo_path)?;
     let access_token = require_access_token(&request.access_token)?;
-    let requested_state = normalize_requested_pull_request_state(
-        request.state.as_deref().unwrap_or("open"),
-    );
+    let requested_state =
+        normalize_requested_pull_request_state(request.state.as_deref().unwrap_or("open"));
     let page = request.page.unwrap_or(1).max(1);
-    let per_page = request.per_page.unwrap_or(10).max(1);
+    let per_page = request.per_page.unwrap_or(20).max(1);
 
     if requested_state == "open" || requested_state == "closed" {
-        let api_state = if requested_state == "open" { "open" } else { "closed" };
-        let response = gitee_api_list_pull_requests(&repo, &access_token, api_state, page, per_page)?;
+        let api_state = if requested_state == "open" {
+            "open"
+        } else {
+            "closed"
+        };
+        let response =
+            gitee_api_list_pull_requests(&repo, &access_token, api_state, page, per_page)?;
         let entries = response
             .as_array()
             .ok_or_else(|| "Unexpected Gitee PR list response.".to_string())?;
@@ -65,7 +75,8 @@ pub(crate) fn list_gitee_pull_requests(
         });
     }
 
-    let (entries, has_more) = collect_gitee_filtered_page(&repo, &access_token, requested_state, page, per_page)?;
+    let (entries, has_more) =
+        collect_gitee_filtered_page(&repo, &access_token, requested_state, page, per_page)?;
 
     Ok(PullRequestPage {
         state: requested_state.to_string(),
@@ -96,7 +107,8 @@ pub(crate) fn count_gitee_pull_requests(
     let mut total = 0_u64;
 
     loop {
-        let response = gitee_api_list_pull_requests(repo, access_token, api_state, remote_page, 100)?;
+        let response =
+            gitee_api_list_pull_requests(repo, access_token, api_state, remote_page, 100)?;
         let entries = response
             .as_array()
             .ok_or_else(|| "Unexpected Gitee PR list response.".to_string())?;
@@ -117,7 +129,13 @@ pub(crate) fn count_gitee_pull_requests(
 }
 
 #[tauri::command]
-pub(crate) fn get_gitee_pull_request_detail(
+pub(crate) async fn get_gitee_pull_request_detail(
+    request: GiteePullRequestDetailRequest,
+) -> Result<GiteePullRequestInfo, String> {
+    run_blocking(move || get_gitee_pull_request_detail_sync(request)).await
+}
+
+pub(crate) fn get_gitee_pull_request_detail_sync(
     request: GiteePullRequestDetailRequest,
 ) -> Result<GiteePullRequestInfo, String> {
     let repo_path = expand_home(&request.repo_path)?;
@@ -129,7 +147,13 @@ pub(crate) fn get_gitee_pull_request_detail(
 }
 
 #[tauri::command]
-pub(crate) fn approve_gitee_pull_request_review(
+pub(crate) async fn approve_gitee_pull_request_review(
+    request: GiteePullRequestActionRequest,
+) -> Result<RepositoryInfo, String> {
+    run_blocking(move || approve_gitee_pull_request_review_sync(request)).await
+}
+
+pub(crate) fn approve_gitee_pull_request_review_sync(
     request: GiteePullRequestActionRequest,
 ) -> Result<RepositoryInfo, String> {
     let repo_path = expand_home(&request.repo_path)?;
@@ -142,7 +166,13 @@ pub(crate) fn approve_gitee_pull_request_review(
 }
 
 #[tauri::command]
-pub(crate) fn approve_gitee_pull_request_test(
+pub(crate) async fn approve_gitee_pull_request_test(
+    request: GiteePullRequestActionRequest,
+) -> Result<RepositoryInfo, String> {
+    run_blocking(move || approve_gitee_pull_request_test_sync(request)).await
+}
+
+pub(crate) fn approve_gitee_pull_request_test_sync(
     request: GiteePullRequestActionRequest,
 ) -> Result<RepositoryInfo, String> {
     let repo_path = expand_home(&request.repo_path)?;
@@ -155,7 +185,13 @@ pub(crate) fn approve_gitee_pull_request_test(
 }
 
 #[tauri::command]
-pub(crate) fn reset_gitee_pull_request_review(
+pub(crate) async fn reset_gitee_pull_request_review(
+    request: GiteePullRequestActionRequest,
+) -> Result<RepositoryInfo, String> {
+    run_blocking(move || reset_gitee_pull_request_review_sync(request)).await
+}
+
+pub(crate) fn reset_gitee_pull_request_review_sync(
     request: GiteePullRequestActionRequest,
 ) -> Result<RepositoryInfo, String> {
     let repo_path = expand_home(&request.repo_path)?;
@@ -168,7 +204,13 @@ pub(crate) fn reset_gitee_pull_request_review(
 }
 
 #[tauri::command]
-pub(crate) fn reset_gitee_pull_request_test(
+pub(crate) async fn reset_gitee_pull_request_test(
+    request: GiteePullRequestActionRequest,
+) -> Result<RepositoryInfo, String> {
+    run_blocking(move || reset_gitee_pull_request_test_sync(request)).await
+}
+
+pub(crate) fn reset_gitee_pull_request_test_sync(
     request: GiteePullRequestActionRequest,
 ) -> Result<RepositoryInfo, String> {
     let repo_path = expand_home(&request.repo_path)?;
@@ -265,7 +307,13 @@ pub(crate) fn list_gitee_repository_members(
 /// 这里会先读取 PR 的 base/head 分支，再把它们拉取到内部 refs，并在 CodeReview
 /// 目录下创建或刷新一个专用 worktree，方便用户用本地工具审查差异。
 #[tauri::command]
-pub(crate) fn prepare_gitee_code_review(
+pub(crate) async fn prepare_gitee_code_review(
+    request: GiteeCodeReviewRequest,
+) -> Result<CodeReviewResult, String> {
+    run_blocking(move || prepare_gitee_code_review_sync(request)).await
+}
+
+pub(crate) fn prepare_gitee_code_review_sync(
     request: GiteeCodeReviewRequest,
 ) -> Result<CodeReviewResult, String> {
     let repo_path = expand_home(&request.repo_path)?;
@@ -277,7 +325,8 @@ pub(crate) fn prepare_gitee_code_review(
     let code_review_root = super::shared::code_review_root(&repo_path)?;
     let worktree_name = super::shared::code_review_worktree_name(&base.branch, &head.branch);
     let worktree_path = code_review_root.join(worktree_name);
-    let review_branch = super::shared::code_review_branch_name(&base.branch, &head.branch, request.number);
+    let review_branch =
+        super::shared::code_review_branch_name(&base.branch, &head.branch, request.number);
     let base_ref = format!("refs/worktree-desk/base/pr-{}", request.number);
     let head_ref = format!("refs/worktree-desk/head/pr-{}", request.number);
     let base_source = resolve_fetch_source(&repo_path, &base, &repo)?;
@@ -313,7 +362,13 @@ pub(crate) fn prepare_gitee_code_review(
 }
 
 #[tauri::command]
-pub(crate) fn cleanup_gitee_code_review_worktree(
+pub(crate) async fn cleanup_gitee_code_review_worktree(
+    request: GiteePullRequestActionRequest,
+) -> Result<RepositoryInfo, String> {
+    run_blocking(move || cleanup_gitee_code_review_worktree_sync(request)).await
+}
+
+pub(crate) fn cleanup_gitee_code_review_worktree_sync(
     request: GiteePullRequestActionRequest,
 ) -> Result<RepositoryInfo, String> {
     let repo_path = expand_home(&request.repo_path)?;
@@ -399,10 +454,7 @@ fn map_gitee_pull_request(
 }
 
 fn normalize_gitee_pull_request_state(raw_state: Option<String>) -> Option<String> {
-    let state = raw_state?
-        .trim()
-        .to_lowercase()
-        .replace([' ', '-'], "_");
+    let state = raw_state?.trim().to_lowercase().replace([' ', '-'], "_");
 
     let normalized = match state.as_str() {
         "open" | "opened" | "reopened" => "open",
@@ -416,7 +468,9 @@ fn normalize_gitee_pull_request_state(raw_state: Option<String>) -> Option<Strin
 }
 
 fn gitee_pull_request_group(value: &Value) -> &'static str {
-    match normalize_gitee_pull_request_state(first_string(value, &[&["state"], &["status"]])).as_deref() {
+    match normalize_gitee_pull_request_state(first_string(value, &[&["state"], &["status"]]))
+        .as_deref()
+    {
         Some("merged") => "merged",
         Some("closed") => "closed",
         Some("reverted") => "reverted",
@@ -508,8 +562,11 @@ fn map_pull_request_commit(value: &Value) -> Result<PullRequestCommitInfo, Strin
 }
 
 fn map_pull_request_file(value: &Value) -> Result<PullRequestChangedFileInfo, String> {
-    let filename = first_string(value, &[&["filename"], &["path"], &["new_path"], &["old_path"]])
-        .ok_or_else(|| "Pull request file entry is missing its filename.".to_string())?;
+    let filename = first_string(
+        value,
+        &[&["filename"], &["path"], &["new_path"], &["old_path"]],
+    )
+    .ok_or_else(|| "Pull request file entry is missing its filename.".to_string())?;
 
     Ok(PullRequestChangedFileInfo {
         filename,

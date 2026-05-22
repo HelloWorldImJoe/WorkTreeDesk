@@ -5,8 +5,7 @@ use crate::{
     models::{
         CodeReviewResult, GiteePullRequestActionRequest, PullRequestChangedFileInfo,
         PullRequestCommitInfo, PullRequestInfo, PullRequestPage, RepositoryInfo,
-        RepositoryMemberInfo,
-        ReviewProviderInfo,
+        RepositoryMemberInfo, ReviewProviderInfo,
     },
     repository::inspect_repository,
 };
@@ -15,11 +14,12 @@ use super::{
     api::github::{
         approve_pull_request_review as github_api_approve_pull_request_review,
         get_authenticated_user, get_pull_request as github_api_get_pull_request,
-        get_pull_request_commit_status, list_pull_request_commits as github_api_list_pull_request_commits,
+        get_pull_request_commit_status,
+        list_pull_request_commits as github_api_list_pull_request_commits,
         list_pull_request_files as github_api_list_pull_request_files,
         list_pull_request_reviews as github_api_list_pull_request_reviews,
-        list_pull_requests as github_api_list_pull_requests, merge_pull_request as github_api_merge_pull_request,
-        list_repository_collaborators,
+        list_pull_requests as github_api_list_pull_requests, list_repository_collaborators,
+        merge_pull_request as github_api_merge_pull_request,
         update_pull_request_state as github_api_update_pull_request_state,
     },
     shared::{
@@ -41,7 +41,8 @@ pub(crate) fn list_github_pull_requests_by_state(
     let per_page = per_page.max(1);
 
     if normalized_state == "open" {
-        let response = github_api_list_pull_requests(provider, access_token, "open", page, per_page)?;
+        let response =
+            github_api_list_pull_requests(provider, access_token, "open", page, per_page)?;
         let current_login = github_current_user_login(access_token)?;
         let entries = response
             .as_array()
@@ -80,7 +81,11 @@ pub(crate) fn list_github_pull_requests_by_state(
         });
     }
 
-    let api_state = if normalized_state == "closed" { "closed" } else { "all" };
+    let api_state = if normalized_state == "closed" {
+        "closed"
+    } else {
+        "all"
+    };
     let (entries, has_more) = collect_github_filtered_page(
         provider,
         access_token,
@@ -120,7 +125,8 @@ pub(crate) fn count_github_pull_requests(
     let mut total = 0_u64;
 
     loop {
-        let response = github_api_list_pull_requests(provider, access_token, api_state, remote_page, 100)?;
+        let response =
+            github_api_list_pull_requests(provider, access_token, api_state, remote_page, 100)?;
         let entries = response
             .as_array()
             .ok_or_else(|| "Unexpected GitHub pull request response.".to_string())?;
@@ -148,8 +154,9 @@ pub(crate) fn get_github_pull_request_detail(
     let response = github_api_get_pull_request(provider, access_token, number)?;
     let current_login = github_current_user_login(access_token)?;
     let state = github_pull_request_state(&response);
-    let review_status = github_review_status_for_login(provider, access_token, number, current_login.as_deref())?
-        .or_else(|| (state.as_deref() == Some("open")).then(|| "pending".to_string()));
+    let review_status =
+        github_review_status_for_login(provider, access_token, number, current_login.as_deref())?
+            .or_else(|| (state.as_deref() == Some("open")).then(|| "pending".to_string()));
     let test_status = if provider.capabilities.show_test_status {
         github_pull_request_test_status(provider, access_token, &response)?
     } else {
@@ -180,10 +187,8 @@ pub(crate) fn approve_github_pull_request_review(
         github_review_action_state(&pull_request, current_login.as_deref());
 
     if review_action_allowed == Some(false) {
-        return Err(
-            review_action_blocked_reason
-                .unwrap_or_else(|| "GitHub does not allow this review approval.".to_string()),
-        );
+        return Err(review_action_blocked_reason
+            .unwrap_or_else(|| "GitHub does not allow this review approval.".to_string()));
     }
 
     github_api_approve_pull_request_review(provider, &access_token, request.number)?;
@@ -369,8 +374,11 @@ fn map_pull_request_commit(value: &Value) -> Result<PullRequestCommitInfo, Strin
 }
 
 fn map_pull_request_file(value: &Value) -> Result<PullRequestChangedFileInfo, String> {
-    let filename = first_string(value, &[&["filename"], &["path"], &["new_path"], &["old_path"]])
-        .ok_or_else(|| "Pull request file entry is missing its filename.".to_string())?;
+    let filename = first_string(
+        value,
+        &[&["filename"], &["path"], &["new_path"], &["old_path"]],
+    )
+    .ok_or_else(|| "Pull request file entry is missing its filename.".to_string())?;
 
     Ok(PullRequestChangedFileInfo {
         filename,
@@ -387,12 +395,7 @@ fn map_pull_request_file(value: &Value) -> Result<PullRequestChangedFileInfo, St
 fn map_repository_member(value: &Value) -> Result<RepositoryMemberInfo, String> {
     let username = first_string(
         value,
-        &[
-            &["login"],
-            &["name"],
-            &["user", "login"],
-            &["user", "name"],
-        ],
+        &[&["login"], &["name"], &["user", "login"], &["user", "name"]],
     )
     .ok_or_else(|| "Repository member entry is missing its identity.".to_string())?;
     let display_name = first_string(
@@ -444,7 +447,10 @@ fn github_review_status_for_login(
     number: i64,
     current_login: Option<&str>,
 ) -> Result<Option<String>, String> {
-    let Some(login) = current_login.map(str::trim).filter(|login| !login.is_empty()) else {
+    let Some(login) = current_login
+        .map(str::trim)
+        .filter(|login| !login.is_empty())
+    else {
         return Ok(None);
     };
 
@@ -473,7 +479,10 @@ fn github_review_action_state(
     pull_request: &Value,
     current_login: Option<&str>,
 ) -> (Option<bool>, Option<String>) {
-    let Some(current_login) = current_login.map(str::trim).filter(|login| !login.is_empty()) else {
+    let Some(current_login) = current_login
+        .map(str::trim)
+        .filter(|login| !login.is_empty())
+    else {
         return (None, None);
     };
 
@@ -538,7 +547,8 @@ fn collect_github_filtered_page(
     let mut items = Vec::new();
 
     loop {
-        let response = github_api_list_pull_requests(provider, access_token, api_state, remote_page, 100)?;
+        let response =
+            github_api_list_pull_requests(provider, access_token, api_state, remote_page, 100)?;
         let entries = response
             .as_array()
             .ok_or_else(|| "Unexpected GitHub pull request response.".to_string())?;
@@ -577,10 +587,7 @@ fn normalize_requested_pull_request_state(requested_state: &str) -> &str {
 }
 
 fn normalize_pull_request_state(raw_state: Option<String>) -> Option<String> {
-    let state = raw_state?
-        .trim()
-        .to_lowercase()
-        .replace([' ', '-'], "_");
+    let state = raw_state?.trim().to_lowercase().replace([' ', '-'], "_");
 
     let normalized = match state.as_str() {
         "open" | "opened" | "reopened" => "open",

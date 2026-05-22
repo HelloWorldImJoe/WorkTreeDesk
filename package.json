@@ -14,8 +14,8 @@
     "release:preview:minor": "node scripts/release.mjs minor --channel preview",
     "release:preview:major": "node scripts/release.mjs major --channel preview",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
+    "tauri:dev": "node scripts/run-tauri-channel.mjs auto dev",
+    "tauri:build": "node scripts/run-tauri-channel.mjs auto build",
     "tauri:dev:preview": "node scripts/run-tauri-channel.mjs preview dev",
     "tauri:build:preview": "node scripts/run-tauri-channel.mjs preview build"
   },

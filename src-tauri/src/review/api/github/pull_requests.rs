@@ -82,7 +82,10 @@ pub(crate) fn get_pull_request_commit_status(
     sha: &str,
 ) -> Result<Value, String> {
     GithubApiClient::new(access_token).get(
-        &format!("/repos/{}/{}/commits/{sha}/status", provider.owner, provider.repo),
+        &format!(
+            "/repos/{}/{}/commits/{sha}/status",
+            provider.owner, provider.repo
+        ),
         Vec::new(),
     )
 }
@@ -93,7 +96,10 @@ pub(crate) fn approve_pull_request_review(
     number: i64,
 ) -> Result<Value, String> {
     GithubApiClient::new(access_token).post_json(
-        &format!("/repos/{}/{}/pulls/{number}/reviews", provider.owner, provider.repo),
+        &format!(
+            "/repos/{}/{}/pulls/{number}/reviews",
+            provider.owner, provider.repo
+        ),
         json!({
             "event": "APPROVE"
         }),
@@ -120,7 +126,10 @@ pub(crate) fn merge_pull_request(
     number: i64,
 ) -> Result<Value, String> {
     GithubApiClient::new(access_token).put_json(
-        &format!("/repos/{}/{}/pulls/{number}/merge", provider.owner, provider.repo),
+        &format!(
+            "/repos/{}/{}/pulls/{number}/merge",
+            provider.owner, provider.repo
+        ),
         json!({}),
     )
 }

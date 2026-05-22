@@ -14,6 +14,18 @@ pub(crate) struct WorktreeInfo {
     pub(crate) detached: bool,
     pub(crate) bare: bool,
     pub(crate) prunable: Option<String>,
+    pub(crate) status: WorktreeStatus,
+}
+
+#[derive(Debug, Serialize, Default, Clone)]
+pub(crate) struct WorktreeStatus {
+    pub(crate) dirty: bool,
+    pub(crate) staged: u32,
+    pub(crate) unstaged: u32,
+    pub(crate) untracked: u32,
+    pub(crate) ahead: Option<u32>,
+    pub(crate) behind: Option<u32>,
+    pub(crate) summary: String,
 }
 
 /// 工作区页和评审流程共用的仓库聚合状态。

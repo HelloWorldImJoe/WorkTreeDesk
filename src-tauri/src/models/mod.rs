@@ -12,13 +12,15 @@ pub(crate) use provider::{
     GiteeRepositoryInfo, ReviewProviderCapabilities, ReviewProviderInfo, ReviewProviderKind,
 };
 pub(crate) use requests::{
-    AddWorktreeRequest, GiteeCodeReviewRequest, GiteePullRequestActionRequest,
-    GiteePullRequestDetailRequest, GiteePullRequestListRequest, OpenPathRequest, OpenUrlRequest,
-    RemoveWorktreeRequest, ReviewProviderListRequest, ReviewProviderPullRequestRequest,
+    AddWorktreeRequest, CloneRepositoryRequest, GiteeCodeReviewRequest,
+    GiteePullRequestActionRequest, GiteePullRequestDetailRequest, GiteePullRequestListRequest,
+    OpenPathRequest, OpenUrlRequest, RemoveWorktreeRequest, ReviewProviderListRequest,
+    ReviewProviderPullRequestFileRequest, ReviewProviderPullRequestRequest,
 };
 pub(crate) use review::{
     CodeReviewResult, GiteePullRequestInfo, PullRequestChangedFileInfo, PullRequestCommitInfo,
-    PullRequestInfo, PullRequestPage, RepositoryMemberInfo,
+    PullRequestFileContent, PullRequestFilePreview, PullRequestInfo, PullRequestPage,
+    RepositoryMemberInfo,
 };
-pub(crate) use scan::{BranchInfo, RepositoryInfo, ScanResult, WorktreeInfo};
+pub(crate) use scan::{BranchInfo, RepositoryInfo, ScanResult, WorktreeInfo, WorktreeStatus};
 pub(crate) use update::ReleaseCheckResult;

@@ -4,6 +4,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,7 +14,7 @@ const [, , channelArg, tauriCommand, ...extraArgs] = process.argv;
 const channel = normalizeChannel(channelArg);
 
 if (!channel) {
-  fail("Missing channel. Use stable or preview.");
+  fail("Missing channel. Use auto, stable or preview.");
 }
 
 if (!tauriCommand) {
@@ -42,10 +43,18 @@ process.exit(1);
 
 function normalizeChannel(value) {
   const channel = String(value || "").trim().toLowerCase();
+  if (channel === "auto") {
+    return readPackageVersion().includes("-preview.") ? "preview" : "stable";
+  }
   if (channel === "stable" || channel === "preview") {
     return channel;
   }
   return "";
+}
+
+function readPackageVersion() {
+  const packageJsonPath = path.join(repoRoot, "package.json");
+  return JSON.parse(fs.readFileSync(packageJsonPath, "utf8")).version ?? "";
 }
 
 function resolveNpxCommand() {

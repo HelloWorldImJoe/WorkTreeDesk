@@ -144,7 +144,12 @@ pub(crate) fn prepare_review_worktree(
 pub(crate) fn code_review_root(repo_path: &Path) -> Result<PathBuf, String> {
     repo_path
         .parent()
-        .ok_or_else(|| format!("Could not resolve parent directory for {}", repo_path.display()))
+        .ok_or_else(|| {
+            format!(
+                "Could not resolve parent directory for {}",
+                repo_path.display()
+            )
+        })
         .map(|parent| parent.join("CodeReview"))
 }
 
@@ -156,7 +161,11 @@ pub(crate) fn code_review_worktree_name(base_branch: &str, head_branch: &str) ->
     )
 }
 
-pub(crate) fn code_review_branch_name(base_branch: &str, head_branch: &str, pr_number: i64) -> String {
+pub(crate) fn code_review_branch_name(
+    base_branch: &str,
+    head_branch: &str,
+    pr_number: i64,
+) -> String {
     format!(
         "review/{}/{}/pr-{}",
         sanitize_ref_component(base_branch),
@@ -175,9 +184,10 @@ pub(crate) fn extract_pull_request_branch_ref(
     let repo_name = extract_repo_name(value, role);
     let repo_owner = extract_repo_owner(value, role);
     let clone_url = extract_repo_clone_url(value, role).or_else(|| {
-        repo_owner.as_ref().zip(repo_name.as_ref()).map(|(owner, repo)| {
-            format!("https://gitee.com/{owner}/{repo}.git")
-        })
+        repo_owner
+            .as_ref()
+            .zip(repo_name.as_ref())
+            .map(|(owner, repo)| format!("https://gitee.com/{owner}/{repo}.git"))
     });
 
     Ok(PullRequestBranchRef {
@@ -329,7 +339,10 @@ pub(crate) fn extract_repo_full_name(value: &Value, role: &str) -> Option<String
 }
 
 pub(crate) fn extract_pull_request_web_url(value: &Value) -> Option<String> {
-    first_string(value, &[&["html_url"], &["htmlUrl"], &["url"], &["web_url"]])
+    first_string(
+        value,
+        &[&["html_url"], &["htmlUrl"], &["url"], &["web_url"]],
+    )
 }
 
 pub(crate) fn first_string(value: &Value, paths: &[&[&str]]) -> Option<String> {
@@ -356,7 +369,10 @@ pub(crate) fn require_provider_access_token(
     access_token: &str,
     provider: &ReviewProviderInfo,
 ) -> Result<String, String> {
-    clean_required(access_token, &format!("{} API Token", provider.display_name))
+    clean_required(
+        access_token,
+        &format!("{} API Token", provider.display_name),
+    )
 }
 
 pub(crate) fn require_access_token(access_token: &str) -> Result<String, String> {
@@ -385,8 +401,10 @@ pub(crate) fn cleanup_code_review_worktree_for_refs(
 ) -> Result<(), String> {
     let code_review_root = code_review_root(repo_path)?;
     let worktree_path = code_review_root.join(code_review_worktree_name(base_branch, head_branch));
+    let review_branch = code_review_branch_name(base_branch, head_branch, pr_number);
 
     if !worktree_path.exists() {
+        delete_review_branch_if_present(repo_path, &review_branch)?;
         return Ok(());
     }
 
@@ -419,6 +437,39 @@ pub(crate) fn cleanup_code_review_worktree_for_refs(
     }
 
     remove_directory_if_empty(&code_review_root)?;
+    delete_review_branch_if_present(repo_path, &review_branch)?;
+
+    Ok(())
+}
+
+fn delete_review_branch_if_present(repo_path: &Path, review_branch: &str) -> Result<(), String> {
+    if !review_branch.starts_with("review/") {
+        return Ok(());
+    }
+
+    let ref_name = format!("refs/heads/{review_branch}");
+    if run_git(
+        repo_path,
+        &[
+            "show-ref".to_string(),
+            "--verify".to_string(),
+            "--quiet".to_string(),
+            ref_name,
+        ],
+    )
+    .is_err()
+    {
+        return Ok(());
+    }
+
+    run_git(
+        repo_path,
+        &[
+            "branch".to_string(),
+            "-D".to_string(),
+            review_branch.to_string(),
+        ],
+    )?;
 
     Ok(())
 }
@@ -454,7 +505,9 @@ fn fetch_gitee_git_auth(access_token: &str) -> Result<GiteeGitAuth, String> {
     let user = parse_json_response(response)?;
     let username = first_string(&user, &[&["login"], &["username"], &["path"], &["name"]])
         .and_then(|value| clean_optional(&value))
-        .ok_or_else(|| "Could not resolve the Gitee username for git authentication.".to_string())?;
+        .ok_or_else(|| {
+            "Could not resolve the Gitee username for git authentication.".to_string()
+        })?;
 
     Ok(GiteeGitAuth {
         username,
@@ -689,8 +742,12 @@ fn is_empty_directory(path: &Path) -> Result<bool, String> {
 
 fn remove_directory_if_empty(path: &Path) -> Result<(), String> {
     if path.exists() && is_empty_directory(path)? {
-        fs::remove_dir(path)
-            .map_err(|error| format!("Could not remove empty directory {}: {error}", path.display()))?;
+        fs::remove_dir(path).map_err(|error| {
+            format!(
+                "Could not remove empty directory {}: {error}",
+                path.display()
+            )
+        })?;
     }
 
     Ok(())
@@ -700,7 +757,10 @@ fn ensure_git_worktree(path: &Path) -> Result<(), String> {
     if is_git_worktree(path) {
         Ok(())
     } else {
-        Err(format!("Git worktree was not created at {}", path.display()))
+        Err(format!(
+            "Git worktree was not created at {}",
+            path.display()
+        ))
     }
 }
 

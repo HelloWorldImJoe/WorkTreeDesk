@@ -13,11 +13,7 @@ impl<'a> GiteeApiClient<'a> {
         Self { access_token }
     }
 
-    pub(crate) fn get(
-        &self,
-        path: &str,
-        query: Vec<(String, String)>,
-    ) -> Result<Value, String> {
+    pub(crate) fn get(&self, path: &str, query: Vec<(String, String)>) -> Result<Value, String> {
         let mut full_query = vec![("access_token".to_string(), self.access_token.to_string())];
         full_query.extend(query);
 

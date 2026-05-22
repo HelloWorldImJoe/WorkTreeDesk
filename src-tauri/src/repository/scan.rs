@@ -3,9 +3,9 @@ use std::{collections::BTreeMap, path::Path};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
-    common::{clean_optional, expand_home, normalize_git_path, repository_name},
+    common::{clean_optional, expand_home, normalize_git_path, repository_name, run_blocking},
     git::git_stdout,
-    models::{BranchInfo, RepositoryInfo, ScanResult, WorktreeInfo},
+    models::{BranchInfo, RepositoryInfo, ScanResult, WorktreeInfo, WorktreeStatus},
     provider::detect_review_provider,
 };
 
@@ -14,7 +14,11 @@ use crate::{
 /// 前端工作区页需要的是“仓库视角”的列表，而不是把每个 worktree 当成独立仓库。
 /// 因此这里先递归发现候选目录，再通过 common_dir 去重，保证 UI 展示稳定。
 #[tauri::command]
-pub(crate) fn scan_directory(root: String) -> Result<ScanResult, String> {
+pub(crate) async fn scan_directory(root: String) -> Result<ScanResult, String> {
+    run_blocking(move || scan_directory_sync(root)).await
+}
+
+fn scan_directory_sync(root: String) -> Result<ScanResult, String> {
     let root_path = expand_home(&root)?;
     if !root_path.exists() {
         return Err(format!("Path does not exist: {}", root_path.display()));
@@ -51,7 +55,21 @@ pub(crate) fn scan_directory(root: String) -> Result<ScanResult, String> {
 }
 
 #[tauri::command]
-pub(crate) fn list_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
+pub(crate) async fn inspect_path(path: String) -> Result<RepositoryInfo, String> {
+    run_blocking(move || inspect_path_sync(path)).await
+}
+
+fn inspect_path_sync(path: String) -> Result<RepositoryInfo, String> {
+    let path = expand_home(&path)?;
+    inspect_repository(&path)
+}
+
+#[tauri::command]
+pub(crate) async fn list_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
+    run_blocking(move || list_branches_sync(repo_path)).await
+}
+
+fn list_branches_sync(repo_path: String) -> Result<Vec<BranchInfo>, String> {
     let repo_path = expand_home(&repo_path)?;
     let output = git_stdout(
         &repo_path,
@@ -88,6 +106,10 @@ pub(crate) fn inspect_repository(path: &Path) -> Result<RepositoryInfo, String> 
         .ok()
         .and_then(|value| clean_optional(&value));
     let porcelain = git_stdout(path, &["worktree", "list", "--porcelain"])?;
+    let mut worktrees = parse_worktrees(&porcelain);
+    for worktree in &mut worktrees {
+        worktree.status = read_worktree_status(Path::new(&worktree.path));
+    }
     let provider = detect_review_provider(path);
     let gitee = provider
         .clone()
@@ -100,7 +122,7 @@ pub(crate) fn inspect_repository(path: &Path) -> Result<RepositoryInfo, String> 
         provider,
         gitee,
         current_branch,
-        worktrees: parse_worktrees(&porcelain),
+        worktrees,
     })
 }
 
@@ -131,6 +153,7 @@ pub(crate) fn parse_worktrees(output: &str) -> Vec<WorktreeInfo> {
                 detached: false,
                 bare: false,
                 prunable: None,
+                status: WorktreeStatus::default(),
             });
             continue;
         }
@@ -155,6 +178,89 @@ pub(crate) fn parse_worktrees(output: &str) -> Vec<WorktreeInfo> {
     }
 
     worktrees
+}
+
+fn read_worktree_status(path: &Path) -> WorktreeStatus {
+    if !path.exists() {
+        return WorktreeStatus {
+            dirty: true,
+            summary: "missing".to_string(),
+            ..WorktreeStatus::default()
+        };
+    }
+
+    let output = match git_stdout(path, &["status", "--short", "--branch"]) {
+        Ok(output) => output,
+        Err(_) => {
+            return WorktreeStatus {
+                summary: "unknown".to_string(),
+                ..WorktreeStatus::default()
+            }
+        }
+    };
+
+    let mut status = WorktreeStatus::default();
+    for line in output.lines() {
+        if let Some(branch_line) = line.strip_prefix("## ") {
+            parse_ahead_behind(branch_line, &mut status);
+            continue;
+        }
+
+        let code = line.get(0..2).unwrap_or_default();
+        let staged = code.chars().next().unwrap_or(' ');
+        let unstaged = code.chars().nth(1).unwrap_or(' ');
+
+        if code == "??" {
+            status.untracked += 1;
+        } else {
+            if staged != ' ' {
+                status.staged += 1;
+            }
+            if unstaged != ' ' {
+                status.unstaged += 1;
+            }
+        }
+    }
+
+    status.dirty = status.staged > 0 || status.unstaged > 0 || status.untracked > 0;
+    status.summary = summarize_status(&status);
+    status
+}
+
+fn parse_ahead_behind(line: &str, status: &mut WorktreeStatus) {
+    let Some(metadata) = line
+        .split_once('[')
+        .and_then(|(_, rest)| rest.split_once(']'))
+    else {
+        return;
+    };
+
+    for part in metadata.0.split(',') {
+        let part = part.trim();
+        if let Some(value) = part.strip_prefix("ahead ") {
+            status.ahead = value.parse().ok();
+        } else if let Some(value) = part.strip_prefix("behind ") {
+            status.behind = value.parse().ok();
+        }
+    }
+}
+
+fn summarize_status(status: &WorktreeStatus) -> String {
+    if !status.dirty {
+        return "clean".to_string();
+    }
+
+    let mut parts = Vec::new();
+    if status.staged > 0 {
+        parts.push(format!("{} staged", status.staged));
+    }
+    if status.unstaged > 0 {
+        parts.push(format!("{} changed", status.unstaged));
+    }
+    if status.untracked > 0 {
+        parts.push(format!("{} untracked", status.untracked));
+    }
+    parts.join(", ")
 }
 
 fn parse_branch_line(line: &str) -> Option<BranchInfo> {

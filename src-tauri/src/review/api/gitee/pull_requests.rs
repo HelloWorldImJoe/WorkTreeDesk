@@ -40,7 +40,10 @@ pub(crate) fn list_pull_request_commits(
     number: i64,
 ) -> Result<Value, String> {
     GiteeApiClient::new(access_token).get(
-        &format!("/repos/{}/{}/pulls/{}/commits", repo.owner, repo.repo, number),
+        &format!(
+            "/repos/{}/{}/pulls/{}/commits",
+            repo.owner, repo.repo, number
+        ),
         vec![("per_page".to_string(), "100".to_string())],
     )
 }
@@ -62,7 +65,10 @@ pub(crate) fn approve_pull_request_review(
     number: i64,
 ) -> Result<Value, String> {
     GiteeApiClient::new(access_token).post_form(
-        &format!("/repos/{}/{}/pulls/{}/review", repo.owner, repo.repo, number),
+        &format!(
+            "/repos/{}/{}/pulls/{}/review",
+            repo.owner, repo.repo, number
+        ),
         vec![
             ("action".to_string(), "approve".to_string()),
             ("event".to_string(), "approve".to_string()),
@@ -92,7 +98,10 @@ pub(crate) fn reset_pull_request_review(
     number: i64,
 ) -> Result<Value, String> {
     GiteeApiClient::new(access_token).post_form(
-        &format!("/repos/{}/{}/pulls/{}/review/reset", repo.owner, repo.repo, number),
+        &format!(
+            "/repos/{}/{}/pulls/{}/review/reset",
+            repo.owner, repo.repo, number
+        ),
         Vec::new(),
     )
 }
@@ -103,7 +112,10 @@ pub(crate) fn reset_pull_request_test(
     number: i64,
 ) -> Result<Value, String> {
     GiteeApiClient::new(access_token).post_form(
-        &format!("/repos/{}/{}/pulls/{}/test/reset", repo.owner, repo.repo, number),
+        &format!(
+            "/repos/{}/{}/pulls/{}/test/reset",
+            repo.owner, repo.repo, number
+        ),
         Vec::new(),
     )
 }

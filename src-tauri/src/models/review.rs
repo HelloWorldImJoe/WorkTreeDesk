@@ -48,6 +48,22 @@ pub(crate) struct CodeReviewResult {
 }
 
 #[derive(Debug, Serialize)]
+pub(crate) struct PullRequestFilePreview {
+    pub(crate) mime_type: String,
+    pub(crate) data_url: String,
+    pub(crate) size: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct PullRequestFileContent {
+    pub(crate) filename: String,
+    pub(crate) patch: Option<String>,
+    pub(crate) image_preview: Option<PullRequestFilePreview>,
+    pub(crate) binary: bool,
+    pub(crate) message: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
 pub(crate) struct RepositoryMemberInfo {
     pub(crate) username: String,
     pub(crate) display_name: String,

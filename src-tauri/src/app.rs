@@ -1,9 +1,9 @@
+#[cfg(not(target_os = "macos"))]
+use tauri::menu::HELP_SUBMENU_ID;
 use tauri::{
     menu::{Menu, MenuItemBuilder, PredefinedMenuItem},
     Emitter, Manager,
 };
-#[cfg(not(target_os = "macos"))]
-use tauri::menu::HELP_SUBMENU_ID;
 
 use crate::update::{UPDATE_MENU_EVENT, UPDATE_MENU_ID};
 
@@ -11,13 +11,16 @@ pub(crate) fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             crate::repository::scan::scan_directory,
+            crate::repository::scan::inspect_path,
             crate::repository::worktree::add_worktree,
             crate::repository::worktree::remove_worktree,
             crate::repository::worktree::prune_worktrees,
             crate::repository::worktree::refresh_repository,
+            crate::repository::worktree::clone_repository,
             crate::repository::scan::list_branches,
             crate::system::open_path,
             crate::system::open_url,
+            crate::system::copy_text,
             crate::review::commands::list_pull_requests,
             crate::review::commands::count_pull_requests,
             crate::review::commands::get_pull_request_detail,
@@ -30,6 +33,7 @@ pub(crate) fn run() {
             crate::review::commands::merge_pull_request,
             crate::review::commands::list_pull_request_commits,
             crate::review::commands::list_pull_request_files,
+            crate::review::commands::get_pull_request_file_content,
             crate::review::commands::list_repository_members,
             crate::review::commands::prepare_code_review,
             crate::review::commands::cleanup_code_review_worktree,

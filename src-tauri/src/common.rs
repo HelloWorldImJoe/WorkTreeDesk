@@ -66,6 +66,16 @@ pub(crate) fn path_arg(path: &Path) -> String {
     path.to_string_lossy().to_string()
 }
 
+pub(crate) async fn run_blocking<T, F>(task: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|error| format!("Background task failed: {error}"))?
+}
+
 fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
