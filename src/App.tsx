@@ -130,6 +130,12 @@ interface Toast {
   message: string;
 }
 
+interface OverflowTooltipState {
+  text: string;
+  x: number;
+  y: number;
+}
+
 interface PendingUpdate {
   version: string;
   currentVersion: string;
@@ -222,6 +228,13 @@ interface PullRequestFileContentInfo {
   message?: string | null;
 }
 
+interface PullRequestCommentInput {
+  filename: string;
+  lineIndex: number;
+  lineText: string;
+  body: string;
+}
+
 interface CodeReviewResult {
   worktree_path: string;
   review_branch: string;
@@ -246,7 +259,7 @@ interface ReviewFilterPreferences extends WorkspaceFilterPreferences {
 
 const SCAN_RESULT_STORAGE_KEY = "worktree-desk.scanResult";
 const PINNED_REPOSITORIES_STORAGE_KEY = "workflow-studio.pinnedRepositories";
-const REPOSITORY_IDE_STORAGE_KEY = "workflow-studio.repositoryIde";
+const WORKSPACE_IDE_STORAGE_KEY = "workflow-studio.workspaceIde";
 const REPOSITORY_GITEE_ENTERPRISE_STORAGE_KEY = "workflow-studio.repositoryGiteeEnterprise";
 const PROVIDER_TOKENS_STORAGE_KEY = "worktree-desk.providerTokens";
 const LANGUAGE_STORAGE_KEY = "workflow-studio.language";
@@ -257,6 +270,9 @@ const WORKSPACE_FILTERS_STORAGE_KEY = "worktree-desk.workspaceFilters";
 const REVIEW_FILTERS_STORAGE_KEY = "worktree-desk.reviewFilters";
 const UPDATE_PROMPTED_VERSION_KEY = "worktree-desk.promptedUpdateVersion";
 const UPDATE_MENU_EVENT = "app://check-for-updates";
+const FAST_TOOLTIP_DELAY_MS = 150;
+const FAST_TOOLTIP_OFFSET = 12;
+const FAST_TOOLTIP_TITLE_DATA_KEY = "fastTooltipTitle";
 const isTauri = "__TAURI_INTERNALS__" in window;
 const SIDEBAR_MIN_WIDTH = 184;
 const SIDEBAR_MAX_WIDTH = 360;
@@ -268,14 +284,21 @@ const REVIEW_LIST_MAX_WIDTH = 560;
 const PLATFORM_GROUP_ORDER: GitPlatformKey[] = ["github", "gitlab", "gitee", "local"];
 
 const IDE_OPTIONS = [
-  { value: "cursor", label: "Cursor" },
-  { value: "vscode", label: "VS Code" },
-  { value: "webstorm", label: "WebStorm" },
-  { value: "idea", label: "IntelliJ IDEA" },
-  { value: "pycharm", label: "PyCharm" },
-  { value: "goland", label: "GoLand" },
-  { value: "xcode", label: "Xcode" },
-  { value: "zed", label: "Zed" },
+  { value: "vscode", label: "VS Code", icon: "/editors/vscode.svg" },
+  { value: "android-studio", label: "Android Studio", icon: "/editors/android-studio.svg" },
+  { value: "xcode", label: "Xcode", icon: "/editors/xcode.svg" },
+  { value: "sublime", label: "Sublime Text", icon: "/editors/sublime.svg" },
+  { value: "idea", label: "IntelliJ IDEA", icon: "/editors/idea.svg" },
+  { value: "pycharm", label: "PyCharm", icon: "/editors/pycharm.svg" },
+  { value: "phpstorm", label: "PhpStorm", icon: "/editors/phpstorm.svg" },
+  { value: "webstorm", label: "WebStorm", icon: "/editors/webstorm.svg" },
+  { value: "goland", label: "GoLand", icon: "/editors/goland.svg" },
+  { value: "clion", label: "CLion", icon: "/editors/clion.svg" },
+  { value: "cursor", label: "Cursor", icon: "/editors/cursor.svg" },
+  { value: "windsurf", label: "Windsurf", icon: "/editors/windsurf.svg" },
+  { value: "rider", label: "Rider", icon: "/editors/rider.svg" },
+  { value: "textmate", label: "TextMate", icon: "/editors/textmate.svg" },
+  { value: "emacs", label: "Emacs", icon: "/editors/emacs.svg" },
 ];
 
 const HOSTING_PROVIDERS = [
@@ -340,10 +363,12 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "repo.worktrees": "工作区",
     "repo.dirty": "有变更",
     "repo.provider": "托管平台",
-    "repo.providerSettings": "仓库设置",
+    "repo.giteeEnterprise": "企业版",
     "repo.localRepository": "本地仓库",
     "repo.none": "无",
     "repo.copyPath": "复制仓库路径",
+    "repo.selectIde": "选择打开 IDE",
+    "repo.open": "打开",
     "repo.openWith": "用 {editor} 打开",
     "repo.openFinder": "在 Finder 中打开",
     "repo.finder": "Finder",
@@ -448,11 +473,7 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "modal.tokenPlaceholderUpdate": "输入新 Token 更新关联",
     "modal.updateLink": "更新关联",
     "modal.confirmLink": "确认关联",
-    "modal.repoSettings": "仓库设置",
     "modal.repository": "仓库",
-    "modal.defaultIde": "默认 IDE",
-    "modal.giteeEnterprise": "Gitee 企业版",
-    "modal.enterpriseNotNeeded": "{provider} 不需要企业版开关。",
     "modal.newWorktree": "新建工作区",
     "modal.branch": "分支",
     "modal.path": "路径",
@@ -484,7 +505,6 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "toast.refreshed": "{name} 已刷新",
     "toast.pinned": "{name} 已固定到顶部",
     "toast.unpinned": "{name} 已取消固定",
-    "toast.repoSettingsSaved": "{name} 设置已保存",
     "toast.providerLinked": "{provider} 已关联",
     "toast.languageChanged": "语言已切换为 {language}",
     "toast.cleanupPreference": "CodeReview 清理策略已设为 {preference}",
@@ -494,6 +514,7 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "toast.prReopened": "PR/MR 已重新开启",
     "toast.prClosed": "PR/MR 已关闭",
     "toast.prMerged": "PR/MR 已合并",
+    "toast.commentSynced": "评论已同步到 Git 平台",
     "toast.cleanupDone": "CodeReview 临时工作区和分支已清理",
     "toast.workspaceCreated": "工作区已创建",
     "toast.projectAdded": "{name} 已加入",
@@ -551,10 +572,12 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "repo.worktrees": "Worktrees",
     "repo.dirty": "Changed",
     "repo.provider": "Provider",
-    "repo.providerSettings": "Repository settings",
+    "repo.giteeEnterprise": "Enterprise",
     "repo.localRepository": "Local repository",
     "repo.none": "None",
     "repo.copyPath": "Copy repository path",
+    "repo.selectIde": "Choose IDE",
+    "repo.open": "Open",
     "repo.openWith": "Open with {editor}",
     "repo.openFinder": "Open in Finder",
     "repo.finder": "Finder",
@@ -659,11 +682,7 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "modal.tokenPlaceholderUpdate": "Enter a new token to update the link",
     "modal.updateLink": "Update link",
     "modal.confirmLink": "Link account",
-    "modal.repoSettings": "Repository settings",
     "modal.repository": "Repository",
-    "modal.defaultIde": "Default IDE",
-    "modal.giteeEnterprise": "Gitee Enterprise",
-    "modal.enterpriseNotNeeded": "{provider} does not need the enterprise switch.",
     "modal.newWorktree": "New Worktree",
     "modal.branch": "Branch",
     "modal.path": "Path",
@@ -695,7 +714,6 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "toast.refreshed": "{name} refreshed",
     "toast.pinned": "{name} pinned to top",
     "toast.unpinned": "{name} unpinned",
-    "toast.repoSettingsSaved": "{name} settings saved",
     "toast.providerLinked": "{provider} linked",
     "toast.languageChanged": "Language changed to {language}",
     "toast.cleanupPreference": "CodeReview cleanup policy set to {preference}",
@@ -705,6 +723,7 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "toast.prReopened": "PR/MR reopened",
     "toast.prClosed": "PR/MR closed",
     "toast.prMerged": "PR/MR merged",
+    "toast.commentSynced": "Comment synced to the Git platform",
     "toast.cleanupDone": "Temporary CodeReview worktree and branch cleaned",
     "toast.workspaceCreated": "Worktree created",
     "toast.projectAdded": "{name} added",
@@ -762,10 +781,12 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "repo.worktrees": "Worktree",
     "repo.dirty": "変更あり",
     "repo.provider": "プロバイダー",
-    "repo.providerSettings": "リポジトリ設定",
+    "repo.giteeEnterprise": "Enterprise",
     "repo.localRepository": "ローカルリポジトリ",
     "repo.none": "なし",
     "repo.copyPath": "リポジトリパスをコピー",
+    "repo.selectIde": "IDE を選択",
+    "repo.open": "開く",
     "repo.openWith": "{editor} で開く",
     "repo.openFinder": "Finder で開く",
     "repo.finder": "Finder",
@@ -870,11 +891,7 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "modal.tokenPlaceholderUpdate": "連携更新用の新しい Token を入力",
     "modal.updateLink": "連携を更新",
     "modal.confirmLink": "連携する",
-    "modal.repoSettings": "リポジトリ設定",
     "modal.repository": "リポジトリ",
-    "modal.defaultIde": "既定の IDE",
-    "modal.giteeEnterprise": "Gitee Enterprise",
-    "modal.enterpriseNotNeeded": "{provider} には Enterprise スイッチは不要です。",
     "modal.newWorktree": "新規 Worktree",
     "modal.branch": "ブランチ",
     "modal.path": "パス",
@@ -906,7 +923,6 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "toast.refreshed": "{name} を更新しました",
     "toast.pinned": "{name} を上部に固定しました",
     "toast.unpinned": "{name} の固定を解除しました",
-    "toast.repoSettingsSaved": "{name} の設定を保存しました",
     "toast.providerLinked": "{provider} を連携しました",
     "toast.languageChanged": "言語を {language} に切り替えました",
     "toast.cleanupPreference": "CodeReview のクリーンアップ方針を {preference} に設定しました",
@@ -916,6 +932,7 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "toast.prReopened": "PR/MR を再オープンしました",
     "toast.prClosed": "PR/MR を閉じました",
     "toast.prMerged": "PR/MR をマージしました",
+    "toast.commentSynced": "コメントを Git プラットフォームに同期しました",
     "toast.cleanupDone": "CodeReview の一時 Worktree とブランチを削除しました",
     "toast.workspaceCreated": "Worktree を作成しました",
     "toast.projectAdded": "{name} を追加しました",
@@ -1155,8 +1172,7 @@ function App() {
   const [currentAppVersion, setCurrentAppVersion] = useState("");
   const [worktreeModalOpen, setWorktreeModalOpen] = useState(false);
   const [projectModalOpen, setProjectModalOpen] = useState(false);
-  const [repositorySettingsRepoId, setRepositorySettingsRepoId] = useState<string | null>(null);
-  const [repositoryIde, setRepositoryIde] = useState<Record<string, string>>(loadRepositoryIdePreferences);
+  const [workspaceIde, setWorkspaceIde] = useState(loadWorkspaceIdePreference);
   const [repositoryGiteeEnterprise, setRepositoryGiteeEnterprise] = useState<Record<string, boolean>>(loadRepositoryGiteeEnterprisePreferences);
   const [providerTokens, setProviderTokens] = useState<Record<ReviewProviderKind, string>>(loadProviderTokenPreferences);
   const [providerModalKind, setProviderModalKind] = useState<ReviewProviderKind | null>(null);
@@ -1205,7 +1221,6 @@ function App() {
   }, [repositories, deferredSearchQuery, repoPlatformSelection]);
 
   const selectedRepo = repositories.find((repo) => repo.root === selectedRepoPath) ?? repositories[0];
-  const repositorySettingsRepo = repositories.find((repo) => repo.common_dir === repositorySettingsRepoId);
   const providerModal = providerModalKind ? getHostingProvider(providerModalKind) : null;
   const activeProviderToken = selectedRepo?.provider ? providerTokens[selectedRepo.provider.kind]?.trim() ?? "" : "";
   const pullRequests = useMemo(
@@ -1568,23 +1583,20 @@ function App() {
     persistPinnedRepositories(uniquePinned);
   }
 
-  function saveRepositorySettings(repo: RepositoryInfo, ide: string, giteeEnterprise: boolean) {
-    setRepositoryIde((current) => {
-      const next = { ...current, [repo.common_dir]: ide };
-      persistRepositoryIdePreferences(next);
-      return next;
-    });
+  function changeWorkspaceIde(nextIde: string) {
+    if (!isIdeValue(nextIde)) return;
+    setWorkspaceIde(nextIde);
+    persistWorkspaceIdePreference(nextIde);
+  }
 
+  function changeRepositoryGiteeEnterprise(repo: RepositoryInfo, enabled: boolean) {
     if (repo.provider?.kind === "gitee") {
       setRepositoryGiteeEnterprise((current) => {
-        const next = { ...current, [repo.common_dir]: giteeEnterprise };
+        const next = { ...current, [repo.common_dir]: enabled };
         persistRepositoryGiteeEnterprisePreferences(next);
         return next;
       });
     }
-
-    setRepositorySettingsRepoId(null);
-    showToast("success", t("toast.repoSettingsSaved", { name: repo.name }));
   }
 
   function saveProviderToken(kind: ReviewProviderKind, token: string) {
@@ -1887,6 +1899,34 @@ function App() {
     return mapPullRequestFileContent(content);
   }
 
+  async function createPullRequestComment(
+    pullRequest: PullRequestViewModel,
+    comment: PullRequestCommentInput,
+  ) {
+    if (!selectedRepo?.provider || !activeProviderToken) {
+      throw new Error(t("error.noRepoToken"));
+    }
+
+    try {
+      await call<void>("create_pull_request_comment", {
+        request: {
+          repo_path: selectedRepo.root,
+          access_token: activeProviderToken,
+          number: pullRequest.number,
+          filename: comment.filename,
+          line_index: comment.lineIndex,
+          line_text: comment.lineText,
+          body: comment.body,
+        },
+      });
+      showToast("success", t("toast.commentSynced"));
+    } catch (error) {
+      const message = getErrorMessage(error, t("error.operationFailed"));
+      showToast("error", message);
+      throw new Error(message);
+    }
+  }
+
   async function startCodeReview(pullRequest: PullRequestViewModel) {
     if (!selectedRepo?.provider || !activeProviderToken) return;
     if (reviewActionInFlightRef.current) return;
@@ -1901,11 +1941,10 @@ function App() {
           number: pullRequest.number,
         },
       });
-      const editor = selectedRepo ? repositoryIde[selectedRepo.common_dir] ?? "cursor" : "cursor";
       await call<void>("open_path", {
         request: {
           path: review.worktree_path,
-          editor,
+          editor: workspaceIde,
           custom_command: null,
         },
       });
@@ -2211,8 +2250,10 @@ function App() {
             onRemoveWorktree={(path) => void removeWorktree(selectedRepo, path)}
             pinnedRepositoryIds={pinnedRepositoryIds}
             onTogglePin={toggleRepositoryPin}
-            repositoryIde={repositoryIde}
-            onOpenRepositorySettings={(repo) => setRepositorySettingsRepoId(repo.common_dir)}
+            selectedIde={workspaceIde}
+            onIdeChange={changeWorkspaceIde}
+            giteeEnterprise={Boolean(selectedRepo && repositoryGiteeEnterprise[selectedRepo.common_dir])}
+            onGiteeEnterpriseChange={changeRepositoryGiteeEnterprise}
             repoPanelCollapsed={repoPanelCollapsed}
             onToggleRepoPanelCollapsed={() => setRepoPanelCollapsed((current) => !current)}
             onStartRepoPanelResize={(event) => startPaneResize("repositories", event)}
@@ -2258,6 +2299,7 @@ function App() {
             onMergePullRequest={(pr) => void runPullRequestAction("merge_pull_request", pr)}
             onStartCodeReview={(pr) => void startCodeReview(pr)}
             onLoadFileContent={loadPullRequestFileContent}
+            onCreateComment={createPullRequestComment}
           />
         )}
 
@@ -2302,16 +2344,6 @@ function App() {
         />
       )}
 
-      {repositorySettingsRepo && (
-        <RepositorySettingsModal
-          repository={repositorySettingsRepo}
-          ide={repositoryIde[repositorySettingsRepo.common_dir] ?? "cursor"}
-          giteeEnterprise={Boolean(repositoryGiteeEnterprise[repositorySettingsRepo.common_dir])}
-          onClose={() => setRepositorySettingsRepoId(null)}
-          onSave={saveRepositorySettings}
-        />
-      )}
-
       {providerModal && providerModalKind && (
         <ProviderTokenModal
           provider={providerModal}
@@ -2352,6 +2384,7 @@ function App() {
           <span title={toast.message}>{toast.message}</span>
         </div>
       )}
+      <FastOverflowTooltip />
     </div>
     </I18nContext.Provider>
   );
@@ -2426,6 +2459,121 @@ function Sidebar({
         </button>
       </div>
     </aside>
+  );
+}
+
+function FastOverflowTooltip() {
+  const [tooltip, setTooltip] = useState<OverflowTooltipState | null>(null);
+  const activeElementRef = useRef<HTMLElement | null>(null);
+  const pointerRef = useRef({ x: 0, y: 0 });
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    function clearTimer() {
+      if (timerRef.current == null) return;
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+
+    function restoreTitle(element: HTMLElement | null) {
+      if (!element) return;
+      const cachedTitle = element.dataset[FAST_TOOLTIP_TITLE_DATA_KEY];
+      if (!cachedTitle) return;
+      element.setAttribute("title", cachedTitle);
+      delete element.dataset[FAST_TOOLTIP_TITLE_DATA_KEY];
+    }
+
+    function hideTooltip() {
+      clearTimer();
+      restoreTitle(activeElementRef.current);
+      activeElementRef.current = null;
+      setTooltip(null);
+    }
+
+    function showTooltip(element: HTMLElement, text: string) {
+      timerRef.current = null;
+      activeElementRef.current = element;
+      setTooltip({
+        text,
+        x: pointerRef.current.x + FAST_TOOLTIP_OFFSET,
+        y: pointerRef.current.y + FAST_TOOLTIP_OFFSET,
+      });
+    }
+
+    function scheduleTooltip(element: HTMLElement, text: string) {
+      clearTimer();
+      timerRef.current = window.setTimeout(
+        () => showTooltip(element, text),
+        FAST_TOOLTIP_DELAY_MS,
+      );
+    }
+
+    function handlePointerOver(event: PointerEvent) {
+      const target = event.target instanceof Element
+        ? event.target.closest<HTMLElement>("[title]")
+        : null;
+      if (!target || !target.isConnected) return;
+      if (!target.closest(".app-shell")) return;
+      if (activeElementRef.current === target) return;
+
+      hideTooltip();
+
+      const title = target.getAttribute("title")?.trim();
+      if (!title || !isOverflowTooltipTarget(target)) return;
+
+      pointerRef.current = { x: event.clientX, y: event.clientY };
+      target.dataset[FAST_TOOLTIP_TITLE_DATA_KEY] = title;
+      target.removeAttribute("title");
+      activeElementRef.current = target;
+      scheduleTooltip(target, title);
+    }
+
+    function handlePointerMove(event: PointerEvent) {
+      pointerRef.current = { x: event.clientX, y: event.clientY };
+      if (!activeElementRef.current) return;
+      setTooltip((current) => current
+        ? {
+            ...current,
+            x: event.clientX + FAST_TOOLTIP_OFFSET,
+            y: event.clientY + FAST_TOOLTIP_OFFSET,
+          }
+        : current);
+    }
+
+    function handlePointerOut(event: PointerEvent) {
+      const activeElement = activeElementRef.current;
+      if (!activeElement) return;
+      const relatedTarget = event.relatedTarget;
+      if (relatedTarget instanceof Node && activeElement.contains(relatedTarget)) return;
+      hideTooltip();
+    }
+
+    document.addEventListener("pointerover", handlePointerOver);
+    document.addEventListener("pointermove", handlePointerMove);
+    document.addEventListener("pointerout", handlePointerOut);
+    window.addEventListener("scroll", hideTooltip, true);
+    window.addEventListener("resize", hideTooltip);
+
+    return () => {
+      document.removeEventListener("pointerover", handlePointerOver);
+      document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerout", handlePointerOut);
+      window.removeEventListener("scroll", hideTooltip, true);
+      window.removeEventListener("resize", hideTooltip);
+      hideTooltip();
+    };
+  }, []);
+
+  if (!tooltip) return null;
+
+  return (
+    <div
+      className="fast-overflow-tooltip"
+      style={{ left: tooltip.x, top: tooltip.y }}
+      role="tooltip"
+    >
+      {tooltip.text}
+    </div>
   );
 }
 
@@ -2572,8 +2720,10 @@ function WorkspacesView({
   onRemoveWorktree,
   pinnedRepositoryIds,
   onTogglePin,
-  repositoryIde,
-  onOpenRepositorySettings,
+  selectedIde,
+  onIdeChange,
+  giteeEnterprise,
+  onGiteeEnterpriseChange,
   repoPanelCollapsed,
   onToggleRepoPanelCollapsed,
   onStartRepoPanelResize,
@@ -2593,8 +2743,10 @@ function WorkspacesView({
   onRemoveWorktree: (path: string) => void;
   pinnedRepositoryIds: Set<string>;
   onTogglePin: (repo: RepositoryInfo) => void;
-  repositoryIde: Record<string, string>;
-  onOpenRepositorySettings: (repo: RepositoryInfo) => void;
+  selectedIde: string;
+  onIdeChange: (ide: string) => void;
+  giteeEnterprise: boolean;
+  onGiteeEnterpriseChange: (repo: RepositoryInfo, enabled: boolean) => void;
   repoPanelCollapsed: boolean;
   onToggleRepoPanelCollapsed: () => void;
   onStartRepoPanelResize: (event: ReactPointerEvent<HTMLButtonElement>) => void;
@@ -2602,7 +2754,6 @@ function WorkspacesView({
   const { t } = useI18n();
   const totalWorktrees = repositories.reduce((sum, repo) => sum + repo.worktrees.length, 0);
   const dirtyCount = repositories.reduce((sum, repo) => sum + repo.worktrees.filter((worktree) => getWorktreeStatus(worktree).dirty).length, 0);
-  const selectedRepoIde = selectedRepo ? repositoryIde[selectedRepo.common_dir] ?? "cursor" : "cursor";
   const repositoryGroups = useMemo(
     () => groupItemsByPlatform(repositories, (repo) => getPlatformFilterKey(repo.provider)),
     [repositories],
@@ -2686,10 +2837,15 @@ function WorkspacesView({
             <ShieldCheck size={17} />
             <span>{t("repo.provider")}</span>
             <strong title={selectedRepo?.provider?.display_name ?? t("repo.none")}>{selectedRepo?.provider?.display_name ?? t("repo.none")}</strong>
-            {selectedRepo && (
-              <button className="icon-button provider-settings-button" onClick={() => onOpenRepositorySettings(selectedRepo)} title={t("repo.providerSettings")}>
-                <Settings size={15} />
-              </button>
+            {selectedRepo?.provider?.kind === "gitee" && (
+              <label className="provider-enterprise-toggle" title={t("repo.giteeEnterprise")}>
+                <input
+                  type="checkbox"
+                  checked={giteeEnterprise}
+                  onChange={(event) => onGiteeEnterpriseChange(selectedRepo, event.target.checked)}
+                />
+                <span>{t("repo.giteeEnterprise")}</span>
+              </label>
             )}
           </div>
         </div>
@@ -2708,10 +2864,11 @@ function WorkspacesView({
                 </div>
               </div>
               <div className="header-actions">
-                <button className="ghost-button repo-action-button" onClick={() => onOpenPath(selectedRepo.root, selectedRepoIde)} title={t("repo.openWith", { editor: getIdeLabel(selectedRepoIde) })}>
-                  <Code2 size={16} />
-                  <span className="action-label">{getIdeLabel(selectedRepoIde)}</span>
-                </button>
+                <IdeOpenControl
+                  value={selectedIde}
+                  onChange={onIdeChange}
+                  onOpen={() => onOpenPath(selectedRepo.root, selectedIde)}
+                />
                 <button className="ghost-button repo-action-button" onClick={() => onOpenPath(selectedRepo.root, "file-manager")} title={t("repo.openFinder")}>
                   <FolderOpen size={16} />
                   <span className="action-label">{t("repo.finder")}</span>
@@ -2738,7 +2895,7 @@ function WorkspacesView({
                   repoRoot={selectedRepo.root}
                   onOpenPath={onOpenPath}
                   onCopyPath={onCopyPath}
-                  ide={selectedRepoIde}
+                  ide={selectedIde}
                   onRemove={onRemoveWorktree}
                 />
               ))}
@@ -2756,6 +2913,87 @@ function WorkspacesView({
         )}
       </section>
     </section>
+  );
+}
+
+function IdeOpenControl({
+  value,
+  onChange,
+  onOpen,
+}: {
+  value: string;
+  onChange: (ide: string) => void;
+  onOpen: () => void;
+}) {
+  const { t } = useI18n();
+  const editorLabel = getIdeLabel(value);
+  const editorIcon = getIdeIcon(value);
+  const [compact, setCompact] = useState(false);
+  const controlRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLSpanElement>(null);
+  const pickerRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    const control = controlRef.current;
+    const measure = measureRef.current;
+    if (!control || !measure) return undefined;
+
+    const updateCompact = () => {
+      const parent = control.parentElement;
+      if (!parent) return;
+
+      const parentStyle = window.getComputedStyle(parent);
+      const gap = parseFloat(parentStyle.columnGap || parentStyle.gap || "0") || 0;
+      const siblings = Array.from(parent.children).filter((child) => child !== control);
+      const siblingWidth = siblings.reduce((sum, child) => (
+        sum + (child instanceof HTMLElement ? child.offsetWidth : 0)
+      ), 0);
+      const availableWidth = parent.clientWidth - siblingWidth - Math.max(parent.children.length - 1, 0) * gap;
+      const pickerWidth = pickerRef.current?.offsetWidth ?? 36;
+      const requiredWidth = measure.scrollWidth + 16 + 7 + 24 + pickerWidth + 2;
+      setCompact(availableWidth < requiredWidth);
+    };
+
+    updateCompact();
+
+    const resizeObserver = new ResizeObserver(updateCompact);
+    resizeObserver.observe(control);
+    resizeObserver.observe(measure);
+    if (control.parentElement) resizeObserver.observe(control.parentElement);
+
+    window.addEventListener("resize", updateCompact);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateCompact);
+    };
+  }, [editorLabel]);
+
+  return (
+    <div className={`ide-open-control ${compact ? "compact" : ""}`} data-ide={value} ref={controlRef}>
+      <button
+        type="button"
+        className="ide-open-primary"
+        onClick={onOpen}
+        title={t("repo.openWith", { editor: editorLabel })}
+      >
+        {editorIcon ? <img className="editor-logo" src={editorIcon} alt="" aria-hidden="true" /> : <Code2 size={16} />}
+        <span>{editorLabel}</span>
+      </button>
+      <span className="ide-open-picker" title={t("repo.selectIde")} ref={pickerRef}>
+        <select
+          className="ide-open-select"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          aria-label={t("repo.selectIde")}
+        >
+          {IDE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <ChevronRight className="ide-open-chevron" size={15} />
+      </span>
+      <span className="ide-open-measure" ref={measureRef} aria-hidden="true">{editorLabel}</span>
+    </div>
   );
 }
 
@@ -2777,6 +3015,7 @@ function WorktreeRow({
   const { t } = useI18n();
   const branchLabel = worktree.branch ?? (worktree.detached ? t("repo.detached") : t("repo.bare"));
   const status = getWorktreeStatus(worktree);
+  const editorIcon = getIdeIcon(ide);
   return (
     <div className="worktree-row">
       <div className="path-cell">
@@ -2797,7 +3036,7 @@ function WorktreeRow({
       </div>
       <div className="row-actions">
         <button className="icon-button" title={t("repo.openWith", { editor: getIdeLabel(ide) })} onClick={() => onOpenPath(worktree.path, ide)}>
-          <Code2 size={15} />
+          {editorIcon ? <img className="editor-logo small" src={editorIcon} alt="" aria-hidden="true" /> : <Code2 size={15} />}
         </button>
         <button className="icon-button" title={t("repo.finder")} onClick={() => onOpenPath(worktree.path, "file-manager")}>
           <FolderOpen size={15} />
@@ -2872,6 +3111,7 @@ function ReviewView({
   onMergePullRequest,
   onStartCodeReview,
   onLoadFileContent,
+  onCreateComment,
 }: {
   repository?: RepositoryInfo;
   pullRequests: PullRequestViewModel[];
@@ -2907,13 +3147,20 @@ function ReviewView({
     pullRequest: PullRequestViewModel,
     file: ReviewFileViewModel,
   ) => Promise<Partial<ReviewFileViewModel> & { message?: string | null }>;
+  onCreateComment: (
+    pullRequest: PullRequestViewModel,
+    comment: PullRequestCommentInput,
+  ) => Promise<void>;
 }) {
   const { t } = useI18n();
   const [expandedFilePath, setExpandedFilePath] = useState<string | null>(null);
   const [selectedDiffLineKey, setSelectedDiffLineKey] = useState<string | null>(null);
   const [commentingDiffLineKey, setCommentingDiffLineKey] = useState<string | null>(null);
   const [commentDraft, setCommentDraft] = useState("");
+  const [commentTarget, setCommentTarget] = useState<PullRequestCommentInput | null>(null);
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
   const [reviewComments, setReviewComments] = useState<Record<string, string[]>>(loadReviewComments);
+  const [collapsedReviewRepositoryKeys, setCollapsedReviewRepositoryKeys] = useState<Set<string>>(() => new Set());
   const [expandedUnchangedFilePaths, setExpandedUnchangedFilePaths] = useState<Set<string>>(() => new Set());
   const [fileContentCache, setFileContentCache] = useState<Record<string, {
     loading: boolean;
@@ -2927,7 +3174,7 @@ function ReviewView({
   const isOpenReview = selectedPullRequest?.queueStatus === "open";
   const canMerge = isOpenReview && selectedPullRequest?.state === "approved" && selectedPullRequest.checks === "passing";
   const reviewGroups = useMemo(
-    () => groupItemsByPlatform(pullRequests, (pullRequest) => pullRequest.providerKind),
+    () => groupPullRequestsByPlatformAndRepository(pullRequests),
     [pullRequests],
   );
   const pullRequestFiles = selectedPullRequest?.files ?? [];
@@ -2941,6 +3188,7 @@ function ReviewView({
     setExpandedFilePath(null);
     setSelectedDiffLineKey(null);
     setCommentingDiffLineKey(null);
+    setCommentTarget(null);
     setCommentDraft("");
     setExpandedUnchangedFilePaths(new Set());
     setVisibleFileCount(REVIEW_INITIAL_FILE_COUNT);
@@ -2971,6 +3219,18 @@ function ReviewView({
     });
   }
 
+  function toggleReviewRepositoryGroup(key: string) {
+    setCollapsedReviewRepositoryKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
+
   function handleReviewListScroll(event: ReactUIEvent<HTMLElement>) {
     if (!tokenConfigured || loading || !hasMore) return;
     const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
@@ -2981,31 +3241,51 @@ function ReviewView({
 
   function selectDiffLine(file: ReviewFileViewModel, line: string, index: number) {
     if (!selectedPullRequest || selectedPullRequest.queueStatus !== "open" || !isCommentableDiffLine(line)) return;
-    setSelectedDiffLineKey(getReviewLineKey(selectedPullRequest.number, file.path, index));
+    setSelectedDiffLineKey(getReviewLineKey(selectedPullRequest.repositoryFullName, selectedPullRequest.number, file.path, index));
     setCommentingDiffLineKey(null);
+    setCommentTarget(null);
     setCommentDraft("");
   }
 
-  function startLineComment(event: ReactMouseEvent, lineKey: string) {
+  function startLineComment(
+    event: ReactMouseEvent,
+    lineKey: string,
+    file: ReviewFileViewModel,
+    line: string,
+    lineIndex: number,
+  ) {
     event.stopPropagation();
     setCommentingDiffLineKey(lineKey);
+    setCommentTarget({
+      filename: file.path,
+      lineIndex,
+      lineText: line,
+      body: "",
+    });
     setCommentDraft("");
   }
 
-  function submitLineComment(event: FormEvent) {
+  async function submitLineComment(event: FormEvent) {
     event.preventDefault();
-    if (!commentingDiffLineKey || !commentDraft.trim()) return;
+    if (!selectedPullRequest || !commentingDiffLineKey || !commentTarget || !commentDraft.trim() || commentSubmitting) return;
     const comment = commentDraft.trim();
-    setReviewComments((current) => {
-      const next = {
-        ...current,
-        [commentingDiffLineKey]: [...(current[commentingDiffLineKey] ?? []), comment],
-      };
-      persistReviewComments(next);
-      return next;
-    });
-    setCommentDraft("");
-    setCommentingDiffLineKey(null);
+    setCommentSubmitting(true);
+    try {
+      await onCreateComment(selectedPullRequest, { ...commentTarget, body: comment });
+      setReviewComments((current) => {
+        const next = {
+          ...current,
+          [commentingDiffLineKey]: [...(current[commentingDiffLineKey] ?? []), comment],
+        };
+        persistReviewComments(next);
+        return next;
+      });
+      setCommentDraft("");
+      setCommentingDiffLineKey(null);
+      setCommentTarget(null);
+    } finally {
+      setCommentSubmitting(false);
+    }
   }
 
   function getFileCacheKey(pullRequest: PullRequestViewModel, file: ReviewFileViewModel) {
@@ -3020,6 +3300,7 @@ function ReviewView({
     setExpandedFilePath(expanded ? null : file.path);
     setSelectedDiffLineKey(null);
     setCommentingDiffLineKey(null);
+    setCommentTarget(null);
     setCommentDraft("");
 
     if (!selectedPullRequest || expanded || !shouldLoadFileContent(file)) return;
@@ -3133,16 +3414,37 @@ function ReviewView({
                   </span>
                   <small>{group.items.length}</small>
                 </div>
-                {group.items.map((pr) => {
-                  const reviewMeta = `${getReviewQueueStatusLabel(pr.queueStatus, t)} · ${pr.repositoryFullName} · ${pr.source} -> ${pr.target}`;
-                  const reviewTooltip = `#${pr.number} ${pr.title}\n${reviewMeta}`;
+                {group.repositories.map((repoGroup) => {
+                  const repoGroupKey = `${group.key}:${repoGroup.repositoryFullName}`;
+                  const collapsed = collapsedReviewRepositoryKeys.has(repoGroupKey);
                   return (
-                    <button key={`${pr.repositoryFullName}-${pr.number}-${pr.queueStatus}`} className={`pr-row ${selectedPullRequest?.number === pr.number && selectedPullRequest.repositoryFullName === pr.repositoryFullName ? "selected" : ""}`} onClick={() => onSelectPullRequest(pr.number)} title={reviewTooltip}>
-                      <span className={`state-dot queue-${pr.queueStatus}`} />
-                      <strong title={`#${pr.number}`}>#{pr.number}</strong>
-                      <span title={pr.title}>{pr.title}</span>
-                      <small title={reviewMeta}>{reviewMeta}</small>
+                  <div className="repo-pr-group" key={repoGroupKey}>
+                    <button
+                      type="button"
+                      className={`repo-pr-group-header ${collapsed ? "collapsed" : ""}`}
+                      onClick={() => toggleReviewRepositoryGroup(repoGroupKey)}
+                      title={repoGroup.repositoryFullName}
+                      aria-expanded={!collapsed}
+                    >
+                      <span>
+                        <ChevronRight className="repo-pr-group-chevron" size={13} />
+                        <span title={repoGroup.repositoryFullName}>{repoGroup.repositoryFullName}</span>
+                      </span>
+                      <small>{repoGroup.items.length}</small>
                     </button>
+                    {!collapsed && repoGroup.items.map((pr) => {
+                      const reviewMeta = `${getReviewQueueStatusLabel(pr.queueStatus, t)} · ${pr.source} -> ${pr.target}`;
+                      const reviewTooltip = `#${pr.number} ${pr.title}\n${pr.repositoryFullName} · ${reviewMeta}`;
+                      return (
+                        <button key={`${pr.repositoryFullName}-${pr.number}-${pr.queueStatus}`} className={`pr-row ${selectedPullRequest?.number === pr.number && selectedPullRequest.repositoryFullName === pr.repositoryFullName ? "selected" : ""}`} onClick={() => onSelectPullRequest(pr.number)} title={reviewTooltip}>
+                          <span className={`state-dot queue-${pr.queueStatus}`} />
+                          <strong title={`#${pr.number}`}>#{pr.number}</strong>
+                          <span title={pr.title}>{pr.title}</span>
+                          <small title={reviewMeta}>{reviewMeta}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
                   );
                 })}
               </section>
@@ -3222,7 +3524,7 @@ function ReviewView({
                   </div>
                 )}
                 {visiblePullRequestFiles.map((file) => {
-              const commentCount = countReviewCommentsForFile(reviewComments, selectedPullRequest.number, file.path);
+              const commentCount = countReviewCommentsForFile(reviewComments, selectedPullRequest.repositoryFullName, selectedPullRequest.number, file.path);
               const expanded = expandedFilePath === file.path;
               const cacheKey = getFileCacheKey(selectedPullRequest, file);
               const cachedFileContent = fileContentCache[cacheKey];
@@ -3320,7 +3622,7 @@ function ReviewView({
                             );
                           }
                           const { line, originalIndex } = item;
-                          const lineKey = getReviewLineKey(selectedPullRequest.number, file.path, originalIndex);
+                          const lineKey = getReviewLineKey(selectedPullRequest.repositoryFullName, selectedPullRequest.number, file.path, originalIndex);
                           const lineComments = reviewComments[lineKey] ?? [];
                           const commentable = isOpenReview && isCommentableDiffLine(line);
                           const selected = selectedDiffLineKey === lineKey;
@@ -3349,7 +3651,7 @@ function ReviewView({
                                     </em>
                                   )}
                                   {commentable && selected && !commenting && (
-                                    <button className="ghost-button diff-comment-button" onClick={(event) => startLineComment(event, lineKey)}>
+                                    <button className="ghost-button diff-comment-button" onClick={(event) => startLineComment(event, lineKey, file, line, originalIndex)}>
                                       <MessageSquare size={13} />
                                       <span>{t("review.comment")}</span>
                                     </button>
@@ -3370,12 +3672,15 @@ function ReviewView({
                                 <form className="comment-form line-comment-form" onSubmit={submitLineComment}>
                                   <textarea value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} placeholder={t("review.commentPlaceholder")} autoFocus />
                                   <div className="comment-form-actions">
-                                    <button className="ghost-button" type="button" onClick={() => setCommentingDiffLineKey(null)}>
+                                    <button className="ghost-button" type="button" onClick={() => {
+                                      setCommentingDiffLineKey(null);
+                                      setCommentTarget(null);
+                                    }} disabled={commentSubmitting}>
                                       <X size={15} />
                                       <span>{t("review.cancel")}</span>
                                     </button>
-                                    <button className="primary-button" type="submit" disabled={!commentDraft.trim()}>
-                                      <Send size={15} />
+                                    <button className="primary-button" type="submit" disabled={!commentDraft.trim() || commentSubmitting}>
+                                      {commentSubmitting ? <Loader2 className="spin" size={15} /> : <Send size={15} />}
                                       <span>{t("review.comment")}</span>
                                     </button>
                                   </div>
@@ -3686,73 +3991,6 @@ function ProviderTokenModal({
           <button type="submit" className="primary-button" disabled={!token.trim()}>
             <ShieldCheck size={16} />
             <span>{linked ? t("modal.updateLink") : t("modal.confirmLink")}</span>
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function RepositorySettingsModal({
-  repository,
-  ide,
-  giteeEnterprise,
-  onClose,
-  onSave,
-}: {
-  repository: RepositoryInfo;
-  ide: string;
-  giteeEnterprise: boolean;
-  onClose: () => void;
-  onSave: (repository: RepositoryInfo, ide: string, giteeEnterprise: boolean) => void;
-}) {
-  const [selectedIde, setSelectedIde] = useState(ide);
-  const [enterpriseEnabled, setEnterpriseEnabled] = useState(giteeEnterprise);
-  const isGitee = repository.provider?.kind === "gitee";
-  const { t } = useI18n();
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    onSave(repository, selectedIde, enterpriseEnabled);
-  }
-
-  return (
-    <Modal title={t("modal.repoSettings")} onClose={onClose}>
-      <form className="modal-form" onSubmit={submit}>
-        <label>
-          <span>{t("modal.repository")}</span>
-          <div className="readonly-field" title={repository.name}>{repository.name}</div>
-        </label>
-        <label>
-          <span>{t("modal.defaultIde")}</span>
-          <select className="modal-select" value={selectedIde} onChange={(event) => setSelectedIde(event.target.value)} title={getIdeLabel(selectedIde)}>
-            {IDE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-        </label>
-        {isGitee ? (
-          <label className="toggle-line">
-            <input
-              type="checkbox"
-              checked={enterpriseEnabled}
-              onChange={(event) => setEnterpriseEnabled(event.target.checked)}
-            />
-            <span>{t("modal.giteeEnterprise")}</span>
-          </label>
-        ) : (
-          <div className="settings-hint">
-            <ShieldCheck size={16} />
-            <span title={t("modal.enterpriseNotNeeded", { provider: repository.provider?.display_name ?? t("repo.localRepository") })}>
-              {t("modal.enterpriseNotNeeded", { provider: repository.provider?.display_name ?? t("repo.localRepository") })}
-            </span>
-          </div>
-        )}
-        <div className="modal-actions">
-          <button type="button" className="ghost-button" onClick={onClose}>{t("modal.cancel")}</button>
-          <button type="submit" className="primary-button">
-            <Check size={16} />
-            <span>{t("modal.save")}</span>
           </button>
         </div>
       </form>
@@ -4130,24 +4368,20 @@ function persistPinnedRepositories(repositories: RepositoryInfo[]) {
   }
 }
 
-function loadRepositoryIdePreferences(): Record<string, string> {
+function loadWorkspaceIdePreference(): string {
   try {
-    const raw = window.localStorage.getItem(REPOSITORY_IDE_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, string>
-      : {};
+    const raw = window.localStorage.getItem(WORKSPACE_IDE_STORAGE_KEY);
+    return isIdeValue(raw) ? raw : "cursor";
   } catch {
-    return {};
+    return "cursor";
   }
 }
 
-function persistRepositoryIdePreferences(preferences: Record<string, string>) {
+function persistWorkspaceIdePreference(ide: string) {
   try {
-    window.localStorage.setItem(REPOSITORY_IDE_STORAGE_KEY, JSON.stringify(preferences));
+    window.localStorage.setItem(WORKSPACE_IDE_STORAGE_KEY, ide);
   } catch {
-    // IDE preferences remain usable for the current session when persistence is unavailable.
+    // IDE preference remains usable for the current session when persistence is unavailable.
   }
 }
 
@@ -4405,8 +4639,37 @@ function isCodeReviewCleanupPreference(value: unknown): value is CodeReviewClean
   return value === "auto" || value === "ask" || value === "keep";
 }
 
+function isOverflowTooltipTarget(element: HTMLElement) {
+  if (isElementVisiblyOverflowing(element)) return true;
+
+  const overflowCandidates = element.querySelectorAll<HTMLElement>("span, strong, small, p, h1, h2, h3, code, em");
+  for (const candidate of overflowCandidates) {
+    if (isElementVisiblyOverflowing(candidate)) return true;
+  }
+
+  return false;
+}
+
+function isElementVisiblyOverflowing(element: HTMLElement) {
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+    return element.scrollWidth > element.clientWidth + 1;
+  }
+
+  const style = window.getComputedStyle(element);
+  if (style.display === "none" || style.visibility === "hidden") return false;
+  return element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1;
+}
+
+function isIdeValue(value: unknown): value is string {
+  return typeof value === "string" && IDE_OPTIONS.some((ide) => ide.value === value);
+}
+
 function getIdeLabel(value: string) {
   return IDE_OPTIONS.find((ide) => ide.value === value)?.label ?? value;
+}
+
+function getIdeIcon(value: string) {
+  return IDE_OPTIONS.find((ide) => ide.value === value)?.icon ?? null;
 }
 
 function getHostingProvider(kind: ReviewProviderKind) {
@@ -4461,6 +4724,25 @@ function groupItemsByPlatform<T>(items: T[], getPlatformKey: (item: T) => GitPla
   return PLATFORM_GROUP_ORDER
     .map((key) => ({ key, items: buckets.get(key) ?? [] }))
     .filter((group) => group.items.length > 0);
+}
+
+function groupPullRequestsByPlatformAndRepository(items: PullRequestViewModel[]) {
+  return groupItemsByPlatform(items, (pullRequest) => pullRequest.providerKind)
+    .map((group) => {
+      const repositoryBuckets = group.items.reduce((groups, item) => {
+        const key = item.repositoryFullName;
+        groups.set(key, [...(groups.get(key) ?? []), item]);
+        return groups;
+      }, new Map<string, PullRequestViewModel[]>());
+
+      return {
+        ...group,
+        repositories: Array.from(repositoryBuckets.entries()).map(([repositoryFullName, repoItems]) => ({
+          repositoryFullName,
+          items: repoItems,
+        })),
+      };
+    });
 }
 
 function getLanguageLabel(value: AppLanguage) {
@@ -4659,16 +4941,16 @@ function formatByteSize(bytes: number) {
   return `${value.toFixed(precision)} ${units[unitIndex]}`;
 }
 
-function getReviewLineKey(prNumber: number, path: string, lineIndex: number) {
-  return `${prNumber}:${path}:${lineIndex}`;
+function getReviewLineKey(repositoryFullName: string, prNumber: number, path: string, lineIndex: number) {
+  return `${repositoryFullName}:${prNumber}:${path}:${lineIndex}`;
 }
 
 function getPullRequestStateKey(repositoryFullName: string, prNumber: number) {
   return `${repositoryFullName}:${prNumber}`;
 }
 
-function countReviewCommentsForFile(comments: Record<string, string[]>, prNumber: number, path: string) {
-  const prefix = `${prNumber}:${path}:`;
+function countReviewCommentsForFile(comments: Record<string, string[]>, repositoryFullName: string, prNumber: number, path: string) {
+  const prefix = `${repositoryFullName}:${prNumber}:${path}:`;
   return Object.entries(comments).reduce((total, [key, values]) => (
     key.startsWith(prefix) ? total + values.length : total
   ), 0);

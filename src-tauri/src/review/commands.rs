@@ -10,8 +10,8 @@ use crate::{
         GiteePullRequestDetailRequest, GiteePullRequestListRequest, PullRequestChangedFileInfo,
         PullRequestCommitInfo, PullRequestFileContent, PullRequestFilePreview, PullRequestInfo,
         PullRequestPage, RepositoryInfo, RepositoryMemberInfo, ReviewProviderKind,
-        ReviewProviderListRequest, ReviewProviderPullRequestFileRequest,
-        ReviewProviderPullRequestRequest,
+        ReviewProviderListRequest, ReviewProviderPullRequestCommentRequest,
+        ReviewProviderPullRequestFileRequest, ReviewProviderPullRequestRequest,
     },
     provider::require_review_provider,
 };
@@ -395,6 +395,72 @@ fn get_pull_request_file_content_sync(
         binary,
         message,
     })
+}
+
+#[tauri::command]
+pub(crate) async fn create_pull_request_comment(
+    request: ReviewProviderPullRequestCommentRequest,
+) -> Result<(), String> {
+    run_blocking(move || create_pull_request_comment_sync(request)).await
+}
+
+fn create_pull_request_comment_sync(
+    request: ReviewProviderPullRequestCommentRequest,
+) -> Result<(), String> {
+    let repo_path = expand_home(&request.repo_path)?;
+    let provider = require_review_provider(&repo_path)?;
+    let access_token = require_provider_access_token(&request.access_token, &provider)?;
+    let body = format_pull_request_comment_body(&request);
+
+    match provider.kind {
+        ReviewProviderKind::Gitee => {
+            let repo = crate::provider::require_gitee_repository(&repo_path)?;
+            super::api::gitee::create_pull_request_comment(
+                &repo,
+                &access_token,
+                request.number,
+                &body,
+            )?;
+        }
+        ReviewProviderKind::Github => {
+            super::api::github::create_pull_request_comment(
+                &provider,
+                &access_token,
+                request.number,
+                &body,
+            )?;
+        }
+        ReviewProviderKind::Gitlab => {
+            super::api::gitlab::create_merge_request_comment(
+                &provider,
+                &access_token,
+                request.number,
+                &body,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn format_pull_request_comment_body(request: &ReviewProviderPullRequestCommentRequest) -> String {
+    let line_text = request.line_text.trim_end();
+    if line_text.is_empty() {
+        format!(
+            "{}\n\n_{}:{}_",
+            request.body.trim(),
+            request.filename,
+            request.line_index + 1,
+        )
+    } else {
+        format!(
+            "{}\n\n_{}:{}_\n```diff\n{}\n```",
+            request.body.trim(),
+            request.filename,
+            request.line_index + 1,
+            line_text,
+        )
+    }
 }
 
 #[tauri::command]

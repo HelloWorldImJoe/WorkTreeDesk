@@ -120,6 +120,21 @@ pub(crate) fn reset_pull_request_test(
     )
 }
 
+pub(crate) fn create_pull_request_comment(
+    repo: &GiteeRepositoryInfo,
+    access_token: &str,
+    number: i64,
+    body: &str,
+) -> Result<Value, String> {
+    GiteeApiClient::new(access_token).post_form(
+        &format!(
+            "/repos/{}/{}/pulls/{number}/comments",
+            repo.owner, repo.repo
+        ),
+        vec![("body".to_string(), body.to_string())],
+    )
+}
+
 pub(crate) fn update_pull_request_state(
     repo: &GiteeRepositoryInfo,
     access_token: &str,

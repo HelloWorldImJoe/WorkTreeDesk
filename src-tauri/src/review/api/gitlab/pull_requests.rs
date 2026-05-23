@@ -93,6 +93,21 @@ pub(crate) fn approve_merge_request(
     ))
 }
 
+pub(crate) fn create_merge_request_comment(
+    provider: &ReviewProviderInfo,
+    access_token: &str,
+    number: i64,
+    body: &str,
+) -> Result<Value, String> {
+    GitlabApiClient::new(&provider.host, access_token).post_form(
+        &format!(
+            "/projects/{}/merge_requests/{number}/notes",
+            encode_gitlab_project_path(&provider.full_name)
+        ),
+        vec![("body".to_string(), body.to_string())],
+    )
+}
+
 pub(crate) fn unapprove_merge_request(
     provider: &ReviewProviderInfo,
     access_token: &str,

@@ -34,6 +34,7 @@ pub(crate) fn run() {
             crate::review::commands::list_pull_request_commits,
             crate::review::commands::list_pull_request_files,
             crate::review::commands::get_pull_request_file_content,
+            crate::review::commands::create_pull_request_comment,
             crate::review::commands::list_repository_members,
             crate::review::commands::prepare_code_review,
             crate::review::commands::cleanup_code_review_worktree,

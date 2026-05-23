@@ -106,6 +106,23 @@ pub(crate) fn approve_pull_request_review(
     )
 }
 
+pub(crate) fn create_pull_request_comment(
+    provider: &ReviewProviderInfo,
+    access_token: &str,
+    number: i64,
+    body: &str,
+) -> Result<Value, String> {
+    GithubApiClient::new(access_token).post_json(
+        &format!(
+            "/repos/{}/{}/issues/{number}/comments",
+            provider.owner, provider.repo
+        ),
+        json!({
+            "body": body,
+        }),
+    )
+}
+
 pub(crate) fn update_pull_request_state(
     provider: &ReviewProviderInfo,
     access_token: &str,

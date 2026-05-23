@@ -15,7 +15,8 @@ pub(crate) use requests::{
     AddWorktreeRequest, CloneRepositoryRequest, GiteeCodeReviewRequest,
     GiteePullRequestActionRequest, GiteePullRequestDetailRequest, GiteePullRequestListRequest,
     OpenPathRequest, OpenUrlRequest, RemoveWorktreeRequest, ReviewProviderListRequest,
-    ReviewProviderPullRequestFileRequest, ReviewProviderPullRequestRequest,
+    ReviewProviderPullRequestCommentRequest, ReviewProviderPullRequestFileRequest,
+    ReviewProviderPullRequestRequest,
 };
 pub(crate) use review::{
     CodeReviewResult, GiteePullRequestInfo, PullRequestChangedFileInfo, PullRequestCommitInfo,

@@ -63,6 +63,17 @@ pub(crate) struct ReviewProviderPullRequestFileRequest {
     pub(crate) filename: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct ReviewProviderPullRequestCommentRequest {
+    pub(crate) repo_path: String,
+    pub(crate) access_token: String,
+    pub(crate) number: i64,
+    pub(crate) filename: String,
+    pub(crate) line_index: u32,
+    pub(crate) line_text: String,
+    pub(crate) body: String,
+}
+
 /// 审批、重置、测试通过等动作共用的请求体。
 ///
 /// 后端会根据 `repo_path` 推导具体 provider 行为，因此请求层只需要携带仓库路径、
