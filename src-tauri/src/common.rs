@@ -1,3 +1,4 @@
+//! 后端通用工具：阻塞任务桥接、输入清洗和仓库命名辅助。
 use std::path::{Path, PathBuf};
 
 pub(crate) fn expand_home(path: &str) -> Result<PathBuf, String> {

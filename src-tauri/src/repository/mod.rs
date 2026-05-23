@@ -1,3 +1,4 @@
+//! 仓库功能模块：扫描仓库和管理 Git Worktree。
 pub(crate) mod scan;
 pub(crate) mod worktree;
 

@@ -1,3 +1,4 @@
+//! 代码评审共享逻辑：临时分支、worktree、评论和平台通用工具。
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::Value;
 use std::{
@@ -33,8 +34,8 @@ pub(crate) fn prepare_provider_code_review(
     let worktree_name = code_review_worktree_name(&base.branch, &head.branch);
     let worktree_path = code_review_root.join(worktree_name);
     let review_branch = code_review_branch_name(&base.branch, &head.branch, number);
-    let base_ref = format!("refs/worktree-desk/base/pr-{number}");
-    let head_ref = format!("refs/worktree-desk/head/pr-{number}");
+    let base_ref = format!("refs/workflow-studio/base/pr-{number}");
+    let head_ref = format!("refs/workflow-studio/head/pr-{number}");
     let base_source = resolve_fetch_source(repo_path, &base, provider)?;
     let head_source = resolve_fetch_source(repo_path, &head, provider)?;
     let git_auth = if fetch_source_uses_provider_https(repo_path, &base_source, provider)
@@ -246,7 +247,7 @@ pub(crate) fn fetch_source_uses_provider_https(
 pub(crate) fn api_client(label: &str) -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(30))
-        .user_agent("WorktreeDesk/0.1")
+        .user_agent("WorkFlowStudio/0.1")
         .build()
         .map_err(|error| format!("Could not initialize {label} client: {error}"))
 }

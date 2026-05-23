@@ -1,3 +1,4 @@
+//! Gitee HTTP 客户端：构造鉴权请求并解析响应。
 use serde_json::Value;
 
 use crate::review::shared::{api_client, parse_json_response};

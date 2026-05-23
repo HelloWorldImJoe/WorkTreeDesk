@@ -1,3 +1,4 @@
+//! Git 相关 DTO：远端、认证和分支引用等结构。
 #[derive(Debug, Clone)]
 pub(crate) struct GitRemoteInfo {
     pub(crate) name: String,

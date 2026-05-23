@@ -1,3 +1,4 @@
+//! GitLab API 模块：组织客户端、仓库和 MR 请求。
 mod client;
 mod pull_requests;
 mod repositories;

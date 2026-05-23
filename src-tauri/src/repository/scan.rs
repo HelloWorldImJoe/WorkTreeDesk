@@ -1,3 +1,4 @@
+//! 仓库扫描命令：发现 Git 仓库、解析 worktree 列表和状态。
 use std::{collections::BTreeMap, path::Path};
 
 use walkdir::{DirEntry, WalkDir};

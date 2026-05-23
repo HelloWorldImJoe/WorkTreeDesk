@@ -1,3 +1,4 @@
+//! Gitee 仓库 API：读取仓库参与者等仓库级数据。
 use serde_json::Value;
 
 use crate::models::GiteeRepositoryInfo;

@@ -1,12 +1,12 @@
 [package]
-name = "worktree-desk"
+name = "workflow-studio"
 version = "0.1.12-preview.7"
-description = "A macOS desktop wrapper for Git worktree workflows."
+description = "A desktop studio for Git worktree management and code review workflows."
 authors = ["Codex"]
 edition = "2021"
 
 [lib]
-name = "worktree_desk_lib"
+name = "workflow_studio_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

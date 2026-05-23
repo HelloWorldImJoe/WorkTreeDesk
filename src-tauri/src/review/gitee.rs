@@ -1,3 +1,4 @@
+//! Gitee 兼容实现：保留旧版 Gitee API 命令并复用评审流程。
 use serde_json::Value;
 
 use crate::{
@@ -327,8 +328,8 @@ pub(crate) fn prepare_gitee_code_review_sync(
     let worktree_path = code_review_root.join(worktree_name);
     let review_branch =
         super::shared::code_review_branch_name(&base.branch, &head.branch, request.number);
-    let base_ref = format!("refs/worktree-desk/base/pr-{}", request.number);
-    let head_ref = format!("refs/worktree-desk/head/pr-{}", request.number);
+    let base_ref = format!("refs/workflow-studio/base/pr-{}", request.number);
+    let head_ref = format!("refs/workflow-studio/head/pr-{}", request.number);
     let base_source = resolve_fetch_source(&repo_path, &base, &repo)?;
     let head_source = resolve_fetch_source(&repo_path, &head, &repo)?;
     let git_auth = if fetch_source_uses_provider_https(&repo_path, &base_source, &repo)

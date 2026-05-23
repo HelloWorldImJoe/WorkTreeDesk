@@ -1,3 +1,4 @@
+//! 代码评审 DTO：PR/MR、文件、提交、成员和评论相关结构。
 use serde::Serialize;
 
 /// 跨平台统一后的 Pull Request / Merge Request 数据。

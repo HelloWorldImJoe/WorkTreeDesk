@@ -3,10 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Worktree Desk</title>
+    <title>WorkFlowStudio</title>
     <script>
       (function() {
-        var theme = localStorage.getItem("worktree-desk.theme");
+        // 启动阶段先恢复主题，避免 React 挂载前出现亮暗色闪烁；旧键用于兼容历史版本。
+        var theme = localStorage.getItem("workflow-studio.theme") || localStorage.getItem("worktree-desk.theme");
         if (theme === "light" || theme === "dark") {
           document.documentElement.setAttribute("data-theme", theme);
         } else if (!theme || theme === "system") {

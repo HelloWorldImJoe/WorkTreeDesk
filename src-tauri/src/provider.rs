@@ -1,3 +1,4 @@
+//! Git 托管平台识别：从远端地址推断 GitHub/GitLab/Gitee 仓库信息。
 use std::path::Path;
 
 use crate::{

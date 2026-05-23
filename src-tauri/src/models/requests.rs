@@ -1,3 +1,4 @@
+//! IPC 请求 DTO：承载前端调用后端命令时传入的参数。
 use serde::Deserialize;
 
 /// `repository::add_worktree` 的请求体。

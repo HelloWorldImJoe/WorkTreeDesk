@@ -1,3 +1,4 @@
+//! 更新检查 DTO：返回 release 信息和可安装更新句柄元数据。
 use serde::Serialize;
 
 /// 返回给前端的应用更新检查结果。
@@ -13,4 +14,17 @@ pub(crate) struct ReleaseCheckResult {
     pub(crate) release_notes: Option<String>,
     pub(crate) published_at: Option<String>,
     pub(crate) release_page_url: String,
+    pub(crate) updater_manifest_url: Option<String>,
+}
+
+/// 前端 `@tauri-apps/plugin-updater` 的 Update 构造器需要的最小元数据。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct InstallableUpdateMetadata {
+    pub(crate) rid: u32,
+    pub(crate) current_version: String,
+    pub(crate) version: String,
+    pub(crate) date: Option<String>,
+    pub(crate) body: Option<String>,
+    pub(crate) raw_json: serde_json::Value,
 }

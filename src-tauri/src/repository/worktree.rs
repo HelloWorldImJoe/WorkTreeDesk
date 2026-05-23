@@ -1,3 +1,4 @@
+//! Worktree 操作命令：创建、删除、清理、刷新和克隆仓库。
 use std::path::{Path, PathBuf};
 
 use crate::{
@@ -43,7 +44,8 @@ fn add_worktree_sync(request: AddWorktreeRequest) -> Result<RepositoryInfo, Stri
     } else {
         args.push(worktree_arg);
         if let Some(reference) = branch {
-            let reference = resolve_remote_branch_reference(&repo_path, &reference).unwrap_or(reference);
+            let reference =
+                resolve_remote_branch_reference(&repo_path, &reference).unwrap_or(reference);
             args.push(reference);
         }
     }
@@ -71,7 +73,12 @@ fn resolve_remote_branch_reference(repo_path: &Path, branch: &str) -> Option<Str
     }
 
     let full_remote_reference = format!("refs/remotes/{remote_reference}");
-    if git_stdout(repo_path, &["rev-parse", "--verify", "--quiet", &full_remote_reference]).is_ok() {
+    if git_stdout(
+        repo_path,
+        &["rev-parse", "--verify", "--quiet", &full_remote_reference],
+    )
+    .is_ok()
+    {
         Some(full_remote_reference)
     } else {
         None

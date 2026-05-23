@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "WorktreeDesk",
+  "productName": "WorkFlowStudio",
   "version": "0.1.12-preview.7",
-  "identifier": "com.codex.worktreedesk",
+  "identifier": "com.codex.workflowstudio",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Worktree Desk",
+        "title": "WorkFlowStudio",
         "width": 1326,
         "height": 1037,
         "minWidth": 720,

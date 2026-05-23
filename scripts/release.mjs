@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// 发布脚本：统一递增版本、同步配置、提交 tag 并推送 release 入口。
 
 import fs from "node:fs";
 import path from "node:path";
@@ -25,6 +26,7 @@ const trackedFiles = {
   cargoLock: path.join(repoRoot, "src-tauri", "Cargo.lock"),
   tauriConfig: path.join(repoRoot, "src-tauri", "tauri.conf.json"),
 };
+const cargoPackageName = "workflow-studio";
 
 if (showHelp) {
   printHelp();
@@ -269,7 +271,7 @@ function writeVersions(version) {
 
   const cargoLock = fs.readFileSync(trackedFiles.cargoLock, "utf8");
   const nextCargoLock = cargoLock.replace(
-    /(\[\[package\]\]\nname = "worktree-desk"\nversion = )".*"/m,
+    new RegExp(`(\\[\\[package\\]\\]\\nname = "${cargoPackageName}"\\nversion = )".*"`, "m"),
     `$1"${version}"`,
   );
   if (nextCargoLock === cargoLock) {
@@ -322,9 +324,9 @@ function readCargoTomlVersion(filePath) {
 
 function readCargoLockVersion(filePath) {
   const text = fs.readFileSync(filePath, "utf8");
-  const match = text.match(/\[\[package\]\]\nname = "worktree-desk"\nversion = "([^"]+)"/m);
+  const match = text.match(new RegExp(`\\[\\[package\\]\\]\\nname = "${cargoPackageName}"\\nversion = "([^"]+)"`, "m"));
   if (!match) {
-    fail(`Could not find worktree-desk version in ${path.relative(repoRoot, filePath)}.`);
+    fail(`Could not find ${cargoPackageName} version in ${path.relative(repoRoot, filePath)}.`);
   }
   return match[1];
 }

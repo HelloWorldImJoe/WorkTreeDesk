@@ -1,3 +1,4 @@
+//! 代码评审 IPC 命令：统一路由 GitHub/GitLab/Gitee 的 PR/MR 操作。
 use std::{path::Path, process::Command};
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};

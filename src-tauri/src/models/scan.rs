@@ -1,3 +1,4 @@
+//! 扫描结果 DTO：仓库、worktree 和状态摘要数据结构。
 use serde::Serialize;
 
 use super::provider::{GiteeRepositoryInfo, ReviewProviderInfo};

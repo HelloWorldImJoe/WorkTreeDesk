@@ -1,3 +1,4 @@
+//! GitLab 评审实现：封装 MR 列表、详情、文件、评论和合并动作。
 use serde_json::Value;
 use std::path::Path;
 

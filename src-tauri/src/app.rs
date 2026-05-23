@@ -1,3 +1,4 @@
+//! Tauri 应用装配：注册命令、插件和原生菜单。
 #[cfg(not(target_os = "macos"))]
 use tauri::menu::HELP_SUBMENU_ID;
 use tauri::{
@@ -46,7 +47,8 @@ pub(crate) fn run() {
             crate::review::gitee::reset_gitee_pull_request_test,
             crate::review::gitee::prepare_gitee_code_review,
             crate::review::gitee::cleanup_gitee_code_review_worktree,
-            crate::update::check_for_app_update
+            crate::update::check_for_app_update,
+            crate::update::check_for_installable_app_update
         ])
         .setup(|app| {
             let menu = build_app_menu(app.handle())?;

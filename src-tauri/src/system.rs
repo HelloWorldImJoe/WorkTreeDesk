@@ -1,3 +1,4 @@
+//! 系统集成命令：打开路径/链接、复制文本和 IDE 启动适配。
 use std::{
     io::Write,
     path::Path,

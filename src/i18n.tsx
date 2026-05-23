@@ -1,12 +1,13 @@
+// 旧版多语言上下文：保留给拆分中的界面文案和语言偏好迁移使用。
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 // ---------------------------------------------------------------------------
-// Translation data
+// 多语言文案数据：保留给旧版界面或后续拆分 i18n 时复用。
 // ---------------------------------------------------------------------------
 
 const translations = {
   en: {
-    "brand.title": "Worktree Desk",
+    "brand.title": "WorkFlowStudio",
     "brand.subtitle": "Git worktree control panel",
     "nav.workspace": "Workspace",
     "nav.reviews": "Reviews",
@@ -260,7 +261,7 @@ const translations = {
   },
 
   zh: {
-    "brand.title": "Worktree Desk",
+    "brand.title": "WorkFlowStudio",
     "brand.subtitle": "Git 工作树管理面板",
     "nav.workspace": "工作区",
     "nav.reviews": "评审",
@@ -542,12 +543,16 @@ function detectSystemLocale(): Locale {
   return navigator.language.startsWith("zh") ? "zh" : "en";
 }
 
-const STORAGE_KEY = "worktree-desk.locale";
+const STORAGE_KEY = "workflow-studio.locale";
+const LEGACY_STORAGE_KEY = "worktree-desk.locale";
 
 function readStoredLocale(): Locale {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === "zh" || stored === "en") return stored;
+    const stored = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (stored === "zh" || stored === "en") {
+      localStorage.setItem(STORAGE_KEY, stored);
+      return stored;
+    }
   } catch {}
   return detectSystemLocale();
 }

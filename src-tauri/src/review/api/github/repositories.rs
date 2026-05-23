@@ -1,3 +1,4 @@
+//! GitHub 仓库 API：读取协作者/成员等仓库级数据。
 use serde_json::Value;
 
 use crate::models::ReviewProviderInfo;

@@ -1,3 +1,4 @@
+//! 后端 DTO 聚合导出：集中暴露前后端 IPC 使用的数据结构。
 mod git;
 mod provider;
 mod requests;
@@ -24,4 +25,4 @@ pub(crate) use review::{
     RepositoryMemberInfo,
 };
 pub(crate) use scan::{BranchInfo, RepositoryInfo, ScanResult, WorktreeInfo, WorktreeStatus};
-pub(crate) use update::ReleaseCheckResult;
+pub(crate) use update::{InstallableUpdateMetadata, ReleaseCheckResult};

@@ -47,15 +47,15 @@ jobs:
           echo "TAURI_RELEASE_ARGS=--config src-tauri/tauri.release.conf.json" >> "$GITHUB_ENV"
 
           if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
-            echo "WORKTREEDESK_CHANNEL=preview" >> "$GITHUB_ENV"
+            echo "WORKFLOWSTUDIO_CHANNEL=preview" >> "$GITHUB_ENV"
             echo "TAURI_CHANNEL_ARGS=--config src-tauri/tauri.preview.conf.json" >> "$GITHUB_ENV"
             echo "RELEASE_CHANNEL_LABEL=Preview" >> "$GITHUB_ENV"
-            echo "RELEASE_BODY=Preview channel build for WorktreeDesk. Use this release to validate upcoming changes before they graduate to stable. Updater manifest: updater/preview/latest.json." >> "$GITHUB_ENV"
+            echo "RELEASE_BODY=Preview channel build for WorkFlowStudio. Use this release to validate upcoming changes before they graduate to stable. Updater manifest: updater/preview/latest.json." >> "$GITHUB_ENV"
           else
-            echo "WORKTREEDESK_CHANNEL=stable" >> "$GITHUB_ENV"
+            echo "WORKFLOWSTUDIO_CHANNEL=stable" >> "$GITHUB_ENV"
             echo "TAURI_CHANNEL_ARGS=" >> "$GITHUB_ENV"
             echo "RELEASE_CHANNEL_LABEL=Stable" >> "$GITHUB_ENV"
-            echo "RELEASE_BODY=Stable channel release for WorktreeDesk. This is the production-ready updater source. Updater manifest: updater/stable/latest.json." >> "$GITHUB_ENV"
+            echo "RELEASE_BODY=Stable channel release for WorkFlowStudio. This is the production-ready updater source. Updater manifest: updater/stable/latest.json." >> "$GITHUB_ENV"
           fi
 
       - name: Setup Node.js
@@ -90,11 +90,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          WORKTREEDESK_CHANNEL: ${{ env.WORKTREEDESK_CHANNEL }}
+          WORKFLOWSTUDIO_CHANNEL: ${{ env.WORKFLOWSTUDIO_CHANNEL }}
         with:
           projectPath: .
           tagName: ${{ github.ref_name }}
-          releaseName: WorktreeDesk ${{ env.RELEASE_CHANNEL_LABEL }} ${{ github.ref_name }}
+          releaseName: WorkFlowStudio ${{ env.RELEASE_CHANNEL_LABEL }} ${{ github.ref_name }}
           releaseBody: ${{ env.RELEASE_BODY }}
           assetNamePattern: '[name]_${{ github.ref_name }}_${{ matrix.assetCode }}[setup][ext]'
           generateReleaseNotes: true

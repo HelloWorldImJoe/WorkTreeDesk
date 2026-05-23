@@ -1,9 +1,11 @@
+// WorkFlowStudio 主界面：集中管理仓库、Worktree、代码评审、设置与更新流程。
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { documentDir } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updater";
+import { check, Update, type DownloadEvent } from "@tauri-apps/plugin-updater";
 import {
   AlertCircle,
   ArrowRight,
@@ -142,7 +144,6 @@ interface PendingUpdate {
   body?: string | null;
   date?: string | null;
   source: "auto" | "manual";
-  releasePageUrl?: string | null;
   installable: boolean;
 }
 
@@ -154,6 +155,16 @@ interface ReleaseCheckResult {
   release_notes?: string | null;
   published_at?: string | null;
   release_page_url: string;
+  updater_manifest_url?: string | null;
+}
+
+interface InstallableUpdateMetadata {
+  rid: number;
+  currentVersion: string;
+  version: string;
+  date?: string | null;
+  body?: string | null;
+  rawJson: Record<string, unknown>;
 }
 
 interface PullRequestViewModel {
@@ -257,18 +268,34 @@ interface ReviewFilterPreferences extends WorkspaceFilterPreferences {
   queueFilter: ReviewQueueStatus;
 }
 
-const SCAN_RESULT_STORAGE_KEY = "worktree-desk.scanResult";
+const APP_NAME = "WorkFlowStudio";
+const SCAN_RESULT_STORAGE_KEY = "workflow-studio.scanResult";
 const PINNED_REPOSITORIES_STORAGE_KEY = "workflow-studio.pinnedRepositories";
 const WORKSPACE_IDE_STORAGE_KEY = "workflow-studio.workspaceIde";
 const REPOSITORY_GITEE_ENTERPRISE_STORAGE_KEY = "workflow-studio.repositoryGiteeEnterprise";
-const PROVIDER_TOKENS_STORAGE_KEY = "worktree-desk.providerTokens";
+const PROVIDER_TOKENS_STORAGE_KEY = "workflow-studio.providerTokens";
 const LANGUAGE_STORAGE_KEY = "workflow-studio.language";
 const REVIEW_COMMENTS_STORAGE_KEY = "workflow-studio.reviewComments";
 const REVIEW_STATE_OVERRIDES_STORAGE_KEY = "workflow-studio.reviewStateOverrides";
 const CODE_REVIEW_CLEANUP_STORAGE_KEY = "workflow-studio.codeReviewCleanup";
-const WORKSPACE_FILTERS_STORAGE_KEY = "worktree-desk.workspaceFilters";
-const REVIEW_FILTERS_STORAGE_KEY = "worktree-desk.reviewFilters";
-const UPDATE_PROMPTED_VERSION_KEY = "worktree-desk.promptedUpdateVersion";
+const WORKSPACE_FILTERS_STORAGE_KEY = "workflow-studio.workspaceFilters";
+const REVIEW_FILTERS_STORAGE_KEY = "workflow-studio.reviewFilters";
+const UPDATE_PROMPTED_VERSION_KEY = "workflow-studio.promptedUpdateVersion";
+// 读取旧版 worktree-desk.* 本地数据并迁移到新品牌键名，避免升级后丢失偏好和缓存。
+const LEGACY_STORAGE_KEYS: Record<string, string[]> = {
+  [SCAN_RESULT_STORAGE_KEY]: ["worktree-desk.scanResult"],
+  [PINNED_REPOSITORIES_STORAGE_KEY]: ["worktree-desk.pinnedRepositories"],
+  [WORKSPACE_IDE_STORAGE_KEY]: ["worktree-desk.workspaceIde"],
+  [REPOSITORY_GITEE_ENTERPRISE_STORAGE_KEY]: ["worktree-desk.repositoryGiteeEnterprise"],
+  [PROVIDER_TOKENS_STORAGE_KEY]: ["worktree-desk.providerTokens"],
+  [LANGUAGE_STORAGE_KEY]: ["worktree-desk.language"],
+  [REVIEW_COMMENTS_STORAGE_KEY]: ["worktree-desk.reviewComments"],
+  [REVIEW_STATE_OVERRIDES_STORAGE_KEY]: ["worktree-desk.reviewStateOverrides"],
+  [CODE_REVIEW_CLEANUP_STORAGE_KEY]: ["worktree-desk.codeReviewCleanup"],
+  [WORKSPACE_FILTERS_STORAGE_KEY]: ["worktree-desk.workspaceFilters"],
+  [REVIEW_FILTERS_STORAGE_KEY]: ["worktree-desk.reviewFilters"],
+  [UPDATE_PROMPTED_VERSION_KEY]: ["worktree-desk.promptedUpdateVersion"],
+};
 const UPDATE_MENU_EVENT = "app://check-for-updates";
 const FAST_TOOLTIP_DELAY_MS = 150;
 const FAST_TOOLTIP_OFFSET = 12;
@@ -283,6 +310,9 @@ const REVIEW_LIST_MIN_WIDTH = 300;
 const REVIEW_LIST_MAX_WIDTH = 560;
 const COMPACT_SPLIT_LAYOUT_QUERY = "(max-width: 860px)";
 const PLATFORM_GROUP_ORDER: GitPlatformKey[] = ["github", "gitlab", "gitee", "local"];
+const PREVIEW_DOCUMENTS_DIR = getPreviewDocumentsDir();
+const PREVIEW_WORKFLOW_ROOT = joinDisplayPath(PREVIEW_DOCUMENTS_DIR, APP_NAME);
+const PREVIEW_PAYMENTS_ROOT = joinDisplayPath(PREVIEW_DOCUMENTS_DIR, "payments-api");
 
 const IDE_OPTIONS = [
   { value: "vscode", label: "VS Code", icon: "/editors/vscode.svg" },
@@ -501,7 +531,7 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "modal.noUpdateNotes": "此版本没有附加更新说明。",
     "modal.later": "稍后",
     "modal.installRestart": "立即安装并重启",
-    "modal.openReleasePage": "打开发布页",
+    "modal.updateUnavailable": "更新包暂不可用",
     "toast.scanned": "已扫描 {count} 个仓库",
     "toast.refreshed": "{name} 已刷新",
     "toast.pinned": "{name} 已固定到顶部",
@@ -523,7 +553,7 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "toast.updateChecking": "正在检查更新...",
     "toast.currentLatest": "当前已经是最新版本（{version}）。",
     "toast.updateFound": "发现新版本 {version}",
-    "toast.updateFoundReleasePage": "发现新版本 {version}，可打开发布页查看",
+    "toast.updatePackageUnavailable": "发现新版本 {version}，但安装包暂不可用",
     "toast.updateDetected": "检测到新版本：{version}",
     "update.downloading": "正在下载更新...",
     "update.downloadingProgress": "正在下载更新... {downloaded} / {total}",
@@ -710,7 +740,7 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "modal.noUpdateNotes": "This version has no update notes.",
     "modal.later": "Later",
     "modal.installRestart": "Install and restart",
-    "modal.openReleasePage": "Open release page",
+    "modal.updateUnavailable": "Update package unavailable",
     "toast.scanned": "Scanned {count} repositories",
     "toast.refreshed": "{name} refreshed",
     "toast.pinned": "{name} pinned to top",
@@ -732,7 +762,7 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "toast.updateChecking": "Checking for updates...",
     "toast.currentLatest": "You are already on the latest version ({version}).",
     "toast.updateFound": "New version {version} found",
-    "toast.updateFoundReleasePage": "New version {version} found. Open the release page to view it.",
+    "toast.updatePackageUnavailable": "New version {version} found, but the update package is unavailable.",
     "toast.updateDetected": "New version detected: {version}",
     "update.downloading": "Downloading update...",
     "update.downloadingProgress": "Downloading update... {downloaded} / {total}",
@@ -919,7 +949,7 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "modal.noUpdateNotes": "このバージョンには更新内容がありません。",
     "modal.later": "後で",
     "modal.installRestart": "インストールして再起動",
-    "modal.openReleasePage": "リリースページを開く",
+    "modal.updateUnavailable": "更新パッケージは利用できません",
     "toast.scanned": "{count} 件のリポジトリをスキャンしました",
     "toast.refreshed": "{name} を更新しました",
     "toast.pinned": "{name} を上部に固定しました",
@@ -941,7 +971,7 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "toast.updateChecking": "更新を確認中...",
     "toast.currentLatest": "すでに最新バージョンです（{version}）。",
     "toast.updateFound": "新しいバージョン {version} があります",
-    "toast.updateFoundReleasePage": "新しいバージョン {version} があります。リリースページで確認できます。",
+    "toast.updatePackageUnavailable": "新しいバージョン {version} がありますが、更新パッケージはまだ利用できません。",
     "toast.updateDetected": "新しいバージョンを検出：{version}",
     "update.downloading": "更新をダウンロード中...",
     "update.downloadingProgress": "更新をダウンロード中... {downloaded} / {total}",
@@ -980,6 +1010,36 @@ function useI18n() {
   return useContext(I18nContext);
 }
 
+function getPreviewDocumentsDir() {
+  const platformHint = `${navigator.userAgent} ${navigator.platform}`.toLowerCase();
+  if (platformHint.includes("win")) return "C:\\Users\\User\\Documents";
+  if (platformHint.includes("mac")) return "/Users/user/Documents";
+  return "/home/user/Documents";
+}
+
+function trimTrailingPathSeparator(path: string) {
+  const trimmed = path.trim();
+  if (!trimmed || trimmed === "/" || trimmed === "\\") return trimmed;
+  if (/^[a-zA-Z]:[\\/]?$/.test(trimmed)) return trimmed.replace("/", "\\");
+  return trimmed.replace(/[\\/]+$/, "");
+}
+
+function getPathSeparatorFor(path: string) {
+  return /^[a-zA-Z]:/.test(path) || (path.includes("\\") && !path.includes("/")) ? "\\" : "/";
+}
+
+function joinDisplayPath(base: string, ...segments: string[]) {
+  const root = trimTrailingPathSeparator(base);
+  const separator = getPathSeparatorFor(root);
+  const cleanSegments = segments
+    .map((segment) => segment.trim().replace(/^[\\/]+|[\\/]+$/g, ""))
+    .filter(Boolean);
+
+  if (!root) return cleanSegments.join(separator);
+  if (cleanSegments.length === 0) return root;
+  return `${root}${separator}${cleanSegments.join(separator)}`;
+}
+
 function formatMessage(message: string, values?: Record<string, string | number>) {
   if (!values) return message;
   return Object.entries(values).reduce(
@@ -991,8 +1051,8 @@ function formatMessage(message: string, values?: Record<string, string | number>
 const demoRepositories: RepositoryInfo[] = [
   {
     name: "workflow-studio",
-    root: "/Users/joe/Documents/WorkFlowStudio",
-    common_dir: "/Users/joe/Documents/WorkFlowStudio/.git",
+    root: PREVIEW_WORKFLOW_ROOT,
+    common_dir: joinDisplayPath(PREVIEW_WORKFLOW_ROOT, ".git"),
     current_branch: "main",
     provider: {
       kind: "github",
@@ -1012,7 +1072,7 @@ const demoRepositories: RepositoryInfo[] = [
     },
     worktrees: [
       {
-        path: "/Users/joe/Documents/WorkFlowStudio",
+        path: PREVIEW_WORKFLOW_ROOT,
         branch: "main",
         head: "7c2a9f1",
         detached: false,
@@ -1021,7 +1081,7 @@ const demoRepositories: RepositoryInfo[] = [
         status: { dirty: true, staged: 2, unstaged: 1, untracked: 3, ahead: 1, behind: 0, summary: "2 staged, 1 changed, 3 untracked" },
       },
       {
-        path: "/Users/joe/Documents/WorkFlowStudio/.worktrees/review-418",
+        path: joinDisplayPath(PREVIEW_WORKFLOW_ROOT, ".worktrees", "review-418"),
         branch: "review/pr-418",
         head: "a51d221",
         detached: false,
@@ -1033,8 +1093,8 @@ const demoRepositories: RepositoryInfo[] = [
   },
   {
     name: "payments-api",
-    root: "/Users/joe/Documents/Work/payments-api",
-    common_dir: "/Users/joe/Documents/Work/payments-api/.git",
+    root: PREVIEW_PAYMENTS_ROOT,
+    common_dir: joinDisplayPath(PREVIEW_PAYMENTS_ROOT, ".git"),
     current_branch: "release/2026.05",
     provider: {
       kind: "gitlab",
@@ -1055,7 +1115,7 @@ const demoRepositories: RepositoryInfo[] = [
     },
     worktrees: [
       {
-        path: "/Users/joe/Documents/Work/payments-api",
+        path: PREVIEW_PAYMENTS_ROOT,
         branch: "release/2026.05",
         head: "4fa92bb",
         detached: false,
@@ -1179,7 +1239,8 @@ function App() {
   const [scannedRepositories, setScannedRepositories] = useState<RepositoryInfo[]>(isTauri ? [] : demoRepositories);
   const [pinnedRepositories, setPinnedRepositories] = useState<RepositoryInfo[]>(loadPinnedRepositories);
   const [selectedRepoPath, setSelectedRepoPath] = useState(isTauri ? "" : demoRepositories[0].root);
-  const [scanRoot, setScanRoot] = useState("/Users/joe/Documents/Work");
+  const [defaultDocumentDir, setDefaultDocumentDir] = useState(isTauri ? "" : PREVIEW_DOCUMENTS_DIR);
+  const [scanRoot, setScanRoot] = useState(isTauri ? "" : PREVIEW_DOCUMENTS_DIR);
   const [initialWorkspaceFilters] = useState(loadWorkspaceFilterPreferences);
   const [searchQuery, setSearchQuery] = useState(initialWorkspaceFilters.searchQuery);
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -1338,6 +1399,32 @@ function App() {
   }, [language]);
 
   useEffect(() => {
+    if (!isTauri) return undefined;
+
+    let cancelled = false;
+
+    // 使用系统文档目录作为默认工作区，避免把某台开发机的绝对路径写进用户环境。
+    void documentDir()
+      .then((dir) => {
+        if (cancelled) return;
+        const nextDir = trimTrailingPathSeparator(dir);
+        if (!nextDir) return;
+
+        setDefaultDocumentDir(nextDir);
+        setScanRoot((current) => current.trim() ? current : nextDir);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDefaultDocumentDir(PREVIEW_DOCUMENTS_DIR);
+        setScanRoot((current) => current.trim() ? current : PREVIEW_DOCUMENTS_DIR);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     persistWorkspaceFilterPreferences({
       searchQuery,
       platformSelection: repoPlatformSelection,
@@ -1360,7 +1447,7 @@ function App() {
     if (!isTauri) return undefined;
 
     const onStorage = (event: StorageEvent) => {
-      if (event.key === UPDATE_PROMPTED_VERSION_KEY) {
+      if (event.key === UPDATE_PROMPTED_VERSION_KEY || LEGACY_STORAGE_KEYS[UPDATE_PROMPTED_VERSION_KEY]?.includes(event.key ?? "")) {
         promptedUpdateVersionRef.current = loadPromptedUpdateVersion();
       }
     };
@@ -2037,15 +2124,7 @@ function App() {
   async function installPendingUpdate() {
     const update = pendingUpdaterRef.current;
     if (!update) {
-      const releasePageUrl = pendingUpdate?.releasePageUrl;
-      if (!releasePageUrl) return;
-
-      try {
-        await call("open_url", { request: { url: releasePageUrl } });
-        setPendingUpdate(null);
-      } catch (error) {
-        showToast("error", getErrorMessage(error, t("error.operationFailed")));
-      }
+      showToast("error", t("modal.updateUnavailable"));
       return;
     }
 
@@ -2097,6 +2176,29 @@ function App() {
     }
   }
 
+  async function checkInstallableUpdate(release: ReleaseCheckResult): Promise<Update | null> {
+    if (release.updater_manifest_url) {
+      try {
+        const metadata = await call<InstallableUpdateMetadata | null>("check_for_installable_app_update", {
+          manifestUrl: release.updater_manifest_url,
+          manifest_url: release.updater_manifest_url,
+        });
+        if (metadata) {
+          return new Update(metadata as ConstructorParameters<typeof Update>[0]);
+        }
+      } catch (error) {
+        console.warn("Failed to create installable update from release manifest", error);
+      }
+    }
+
+    try {
+      return await check({ allowDowngrades: true, timeout: 12000 });
+    } catch (error) {
+      console.warn("Failed to check configured updater endpoint", error);
+      return null;
+    }
+  }
+
   async function checkForUpdates(source: "auto" | "manual") {
     if (!isTauri) {
       if (source === "manual") {
@@ -2137,12 +2239,7 @@ function App() {
 
       await disposePendingUpdater();
 
-      let update: Update | null = null;
-      try {
-        update = await check();
-      } catch {
-        update = null;
-      }
+      const update = await checkInstallableUpdate(release);
 
       if (update) {
         pendingUpdaterRef.current = update;
@@ -2155,7 +2252,6 @@ function App() {
             body: update.body ?? release.release_notes ?? null,
             date: update.date ?? release.published_at ?? null,
             source,
-            releasePageUrl: release.release_page_url,
             installable: true,
           }
         : {
@@ -2164,14 +2260,13 @@ function App() {
             body: release.release_notes ?? null,
             date: release.published_at ?? null,
             source,
-            releasePageUrl: release.release_page_url,
             installable: false,
           };
 
       if (source === "manual") {
         showToast("info", update
           ? t("toast.updateFound", { version: nextPendingUpdate.version })
-          : t("toast.updateFoundReleasePage", { version: nextPendingUpdate.version }));
+          : t("toast.updatePackageUnavailable", { version: nextPendingUpdate.version }));
       } else {
         rememberPromptedUpdateVersion(nextPendingUpdate.version);
         showToast("info", t("toast.updateDetected", { version: nextPendingUpdate.version }));
@@ -2392,6 +2487,7 @@ function App() {
 
       {projectModalOpen && (
         <NewProjectModal
+          defaultParentDir={defaultDocumentDir || PREVIEW_DOCUMENTS_DIR}
           onClose={() => setProjectModalOpen(false)}
           onCreated={(repo) => {
             updateRepository(repo, { addToScan: true });
@@ -2492,10 +2588,10 @@ function Sidebar({
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
       <div className="brand">
         <div className="brand-mark">
-        <GitBranch size={18} />
+          <GitBranch size={18} />
         </div>
         <div>
-          <strong title="WorkTree Desk">WorkTree Desk</strong>
+          <strong title={APP_NAME}>{APP_NAME}</strong>
           <span title={t("app.subtitle")}>{t("app.subtitle")}</span>
         </div>
         <button className="icon-button sidebar-collapse-button" onClick={onToggleCollapsed} title={collapsed ? t("nav.expandSidebar") : t("nav.collapseSidebar")}>
@@ -4175,18 +4271,21 @@ function NewWorktreeModal({
 }
 
 function NewProjectModal({
+  defaultParentDir,
   onClose,
   onCreated,
   onError,
 }: {
+  defaultParentDir: string;
   onClose: () => void;
   onCreated: (repo: RepositoryInfo) => void;
   onError: (message: string) => void;
 }) {
+  const initialParentDir = defaultParentDir.trim() || PREVIEW_DOCUMENTS_DIR;
   const [mode, setMode] = useState<ProjectMode>("local");
-  const [localPath, setLocalPath] = useState("/Users/joe/Documents/WorkFlowStudio");
+  const [localPath, setLocalPath] = useState(() => joinDisplayPath(initialParentDir, APP_NAME));
   const [remoteUrl, setRemoteUrl] = useState("");
-  const [parentDir, setParentDir] = useState("/Users/joe/Documents/Work");
+  const [parentDir, setParentDir] = useState(initialParentDir);
   const [directoryName, setDirectoryName] = useState("");
   const [loading, setLoading] = useState(false);
   const { t } = useI18n();
@@ -4346,9 +4445,9 @@ function UpdateModal({
         )}
         <div className="modal-actions">
           <button type="button" className="ghost-button" onClick={onClose} disabled={updateBusy}>{t("modal.later")}</button>
-          <button type="button" className="primary-button" onClick={onInstall} disabled={updateBusy}>
-            {updateBusy ? <Loader2 className="spin" size={16} /> : update.installable ? <RefreshCw size={16} /> : <ExternalLink size={16} />}
-            <span>{update.installable ? t("modal.installRestart") : t("modal.openReleasePage")}</span>
+          <button type="button" className="primary-button" onClick={onInstall} disabled={updateBusy || !update.installable}>
+            {updateBusy ? <Loader2 className="spin" size={16} /> : update.installable ? <RefreshCw size={16} /> : <AlertCircle size={16} />}
+            <span>{update.installable ? t("modal.installRestart") : t("modal.updateUnavailable")}</span>
           </button>
         </div>
       </div>
@@ -4405,7 +4504,7 @@ function createDemoReviewQueues(): Record<ReviewQueueStatus, ReviewQueueState> {
 
 function loadCachedScanResult(): ScanResult | null {
   try {
-    const raw = window.localStorage.getItem(SCAN_RESULT_STORAGE_KEY);
+    const raw = readLocalStorage(SCAN_RESULT_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<ScanResult>;
     if (!parsed || typeof parsed.root !== "string" || !Array.isArray(parsed.repositories)) return null;
@@ -4442,7 +4541,7 @@ function normalizeRepository(repository: RepositoryInfo): RepositoryInfo {
 
 function loadPinnedRepositories(): RepositoryInfo[] {
   try {
-    const raw = window.localStorage.getItem(PINNED_REPOSITORIES_STORAGE_KEY);
+    const raw = readLocalStorage(PINNED_REPOSITORIES_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? uniqueRepositories((parsed as RepositoryInfo[]).map(normalizeRepository)) : [];
@@ -4461,7 +4560,7 @@ function persistPinnedRepositories(repositories: RepositoryInfo[]) {
 
 function loadWorkspaceIdePreference(): string {
   try {
-    const raw = window.localStorage.getItem(WORKSPACE_IDE_STORAGE_KEY);
+    const raw = readLocalStorage(WORKSPACE_IDE_STORAGE_KEY);
     return isIdeValue(raw) ? raw : "cursor";
   } catch {
     return "cursor";
@@ -4478,7 +4577,7 @@ function persistWorkspaceIdePreference(ide: string) {
 
 function loadRepositoryGiteeEnterprisePreferences(): Record<string, boolean> {
   try {
-    const raw = window.localStorage.getItem(REPOSITORY_GITEE_ENTERPRISE_STORAGE_KEY);
+    const raw = readLocalStorage(REPOSITORY_GITEE_ENTERPRISE_STORAGE_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
@@ -4499,7 +4598,7 @@ function persistRepositoryGiteeEnterprisePreferences(preferences: Record<string,
 
 function loadProviderTokenPreferences(): Record<ReviewProviderKind, string> {
   try {
-    const raw = window.localStorage.getItem(PROVIDER_TOKENS_STORAGE_KEY);
+    const raw = readLocalStorage(PROVIDER_TOKENS_STORAGE_KEY);
     if (!raw) return {} as Record<ReviewProviderKind, string>;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {} as Record<ReviewProviderKind, string>;
@@ -4525,7 +4624,7 @@ function persistProviderTokenPreferences(preferences: Record<ReviewProviderKind,
 
 function loadWorkspaceFilterPreferences(): WorkspaceFilterPreferences {
   try {
-    const raw = window.localStorage.getItem(WORKSPACE_FILTERS_STORAGE_KEY);
+    const raw = readLocalStorage(WORKSPACE_FILTERS_STORAGE_KEY);
     if (!raw) return createDefaultWorkspaceFilterPreferences();
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return createDefaultWorkspaceFilterPreferences();
@@ -4552,7 +4651,7 @@ function persistWorkspaceFilterPreferences(preferences: WorkspaceFilterPreferenc
 
 function loadReviewFilterPreferences(): ReviewFilterPreferences {
   try {
-    const raw = window.localStorage.getItem(REVIEW_FILTERS_STORAGE_KEY);
+    const raw = readLocalStorage(REVIEW_FILTERS_STORAGE_KEY);
     if (!raw) return createDefaultReviewFilterPreferences();
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return createDefaultReviewFilterPreferences();
@@ -4606,7 +4705,7 @@ function getStoredPlatformSelection(value: unknown, includeLocal: boolean): GitP
 
 function loadLanguagePreference(): AppLanguage {
   try {
-    const raw = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    const raw = readLocalStorage(LANGUAGE_STORAGE_KEY);
     return isAppLanguage(raw) ? raw : "zh-CN";
   } catch {
     return "zh-CN";
@@ -4623,7 +4722,7 @@ function persistLanguagePreference(language: AppLanguage) {
 
 function loadCodeReviewCleanupPreference(): CodeReviewCleanupPreference {
   try {
-    const raw = window.localStorage.getItem(CODE_REVIEW_CLEANUP_STORAGE_KEY);
+    const raw = readLocalStorage(CODE_REVIEW_CLEANUP_STORAGE_KEY);
     return isCodeReviewCleanupPreference(raw) ? raw : "ask";
   } catch {
     return "ask";
@@ -4640,7 +4739,7 @@ function persistCodeReviewCleanupPreference(preference: CodeReviewCleanupPrefere
 
 function loadReviewComments(): Record<string, string[]> {
   try {
-    const raw = window.localStorage.getItem(REVIEW_COMMENTS_STORAGE_KEY);
+    const raw = readLocalStorage(REVIEW_COMMENTS_STORAGE_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
@@ -4670,7 +4769,7 @@ function isPullRequestReviewState(value: unknown): value is PullRequestViewModel
 
 function loadReviewStateOverrides(): Record<string, PullRequestViewModel["state"]> {
   try {
-    const raw = window.localStorage.getItem(REVIEW_STATE_OVERRIDES_STORAGE_KEY);
+    const raw = readLocalStorage(REVIEW_STATE_OVERRIDES_STORAGE_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
@@ -4696,7 +4795,7 @@ function persistReviewStateOverrides(states: Record<string, PullRequestViewModel
 
 function loadPromptedUpdateVersion() {
   try {
-    return window.localStorage.getItem(UPDATE_PROMPTED_VERSION_KEY) || "";
+    return readLocalStorage(UPDATE_PROMPTED_VERSION_KEY) || "";
   } catch {
     return "";
   }
@@ -4707,10 +4806,32 @@ function savePromptedUpdateVersion(version: string) {
     if (version) {
       window.localStorage.setItem(UPDATE_PROMPTED_VERSION_KEY, version);
     } else {
-      window.localStorage.removeItem(UPDATE_PROMPTED_VERSION_KEY);
+      removeLocalStorage(UPDATE_PROMPTED_VERSION_KEY);
     }
   } catch {
     // Update prompts can still be shown if persistence is unavailable.
+  }
+}
+
+function readLocalStorage(key: string): string | null {
+  const value = window.localStorage.getItem(key);
+  if (value !== null) return value;
+
+  for (const legacyKey of LEGACY_STORAGE_KEYS[key] ?? []) {
+    const legacyValue = window.localStorage.getItem(legacyKey);
+    if (legacyValue !== null) {
+      window.localStorage.setItem(key, legacyValue);
+      return legacyValue;
+    }
+  }
+
+  return null;
+}
+
+function removeLocalStorage(key: string) {
+  window.localStorage.removeItem(key);
+  for (const legacyKey of LEGACY_STORAGE_KEYS[key] ?? []) {
+    window.localStorage.removeItem(legacyKey);
   }
 }
 
@@ -5174,7 +5295,7 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
   if (!isTauri) {
     await new Promise((resolve) => window.setTimeout(resolve, 240));
     if (command === "scan_directory") {
-      return { root: String(args?.root ?? "/Users/joe/Documents/Work"), repositories: demoRepositories } as T;
+      return { root: String(args?.root ?? PREVIEW_DOCUMENTS_DIR), repositories: demoRepositories } as T;
     }
     if (command === "inspect_path") {
       const path = String(args?.path ?? demoRepositories[0].root);

@@ -1,3 +1,4 @@
+//! GitLab MR API：读取、评论、审批、关闭和合并 MR。
 use serde_json::Value;
 
 use crate::models::ReviewProviderInfo;

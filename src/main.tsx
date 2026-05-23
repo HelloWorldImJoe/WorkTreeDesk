@@ -1,3 +1,4 @@
+// React 入口：挂载根组件，并用错误边界兜住首屏渲染异常。
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";

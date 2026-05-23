@@ -1,3 +1,4 @@
+//! 托管平台 DTO：描述仓库平台信息、能力和 Gitee 仓库响应。
 use serde::Serialize;
 
 #[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// 根据 stable / preview 渠道拼装 Tauri dev/build 参数。
 
 import path from "node:path";
 import process from "node:process";
@@ -31,7 +32,7 @@ const result = spawnSync(resolveNpxCommand(), tauriArgs, {
   stdio: "inherit",
   env: {
     ...process.env,
-    WORKTREEDESK_CHANNEL: channel,
+    WORKFLOWSTUDIO_CHANNEL: channel,
   },
 });
 

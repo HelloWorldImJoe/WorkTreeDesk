@@ -1,3 +1,4 @@
+//! Git 命令封装：统一执行 git 子命令并转换错误信息。
 use std::{collections::BTreeMap, path::Path, process::Command};
 
 use crate::models::GitRemoteInfo;

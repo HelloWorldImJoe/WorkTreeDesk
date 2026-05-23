@@ -1,3 +1,4 @@
+//! Gitee PR API：读取、评论、审批、关闭和合并 PR。
 use serde_json::Value;
 
 use crate::models::GiteeRepositoryInfo;
