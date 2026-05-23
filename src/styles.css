@@ -1026,11 +1026,11 @@ button:disabled {
 }
 
 .repo-path-line {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px;
+  display: inline-grid;
+  grid-template-columns: minmax(0, auto) 28px;
   align-items: center;
   gap: 6px;
-  width: 100%;
+  width: fit-content;
   max-width: min(620px, 100%);
 }
 
