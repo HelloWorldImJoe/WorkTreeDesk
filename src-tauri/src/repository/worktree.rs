@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{
     common::{clean_optional, clean_optional_string, clean_required, expand_home, run_blocking},
@@ -26,19 +26,56 @@ fn add_worktree_sync(request: AddWorktreeRequest) -> Result<RepositoryInfo, Stri
     let branch = clean_optional_string(&request.branch);
     if request.create_branch {
         if let Some(branch) = branch {
-            args.push("-b".to_string());
-            args.push(branch);
+            if let Some(remote_reference) = resolve_remote_branch_reference(&repo_path, &branch) {
+                args.push("-b".to_string());
+                args.push(branch);
+                args.push("--track".to_string());
+                args.push(worktree_arg);
+                args.push(remote_reference);
+            } else {
+                args.push("-b".to_string());
+                args.push(branch);
+                args.push(worktree_arg);
+            }
+        } else {
+            args.push(worktree_arg);
         }
-        args.push(worktree_arg);
     } else {
         args.push(worktree_arg);
         if let Some(reference) = branch {
+            let reference = resolve_remote_branch_reference(&repo_path, &reference).unwrap_or(reference);
             args.push(reference);
         }
     }
 
     run_git(&repo_path, &args)?;
     inspect_repository(&repo_path)
+}
+
+fn resolve_remote_branch_reference(repo_path: &Path, branch: &str) -> Option<String> {
+    let trimmed = branch.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let remote_reference = if let Some(reference) = trimmed.strip_prefix("refs/remotes/") {
+        reference.to_string()
+    } else if let Some(reference) = trimmed.strip_prefix("remotes/") {
+        reference.to_string()
+    } else {
+        trimmed.to_string()
+    };
+
+    if remote_reference.is_empty() || !remote_reference.contains('/') {
+        return None;
+    }
+
+    let full_remote_reference = format!("refs/remotes/{remote_reference}");
+    if git_stdout(repo_path, &["rev-parse", "--verify", "--quiet", &full_remote_reference]).is_ok() {
+        Some(full_remote_reference)
+    } else {
+        None
+    }
 }
 
 #[tauri::command]

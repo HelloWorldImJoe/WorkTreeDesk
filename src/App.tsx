@@ -281,6 +281,7 @@ const REPO_PANEL_MIN_WIDTH = 260;
 const REPO_PANEL_MAX_WIDTH = 560;
 const REVIEW_LIST_MIN_WIDTH = 300;
 const REVIEW_LIST_MAX_WIDTH = 560;
+const COMPACT_SPLIT_LAYOUT_QUERY = "(max-width: 860px)";
 const PLATFORM_GROUP_ORDER: GitPlatformKey[] = ["github", "gitlab", "gitee", "local"];
 
 const IDE_OPTIONS = [
@@ -1154,6 +1155,25 @@ const demoPullRequests: PullRequestViewModel[] = [
   },
 ];
 
+function getMediaQueryMatches(query: string) {
+  return window.matchMedia(query).matches;
+}
+
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(() => getMediaQueryMatches(query));
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(query);
+    const updateMatches = () => setMatches(mediaQuery.matches);
+
+    updateMatches();
+    mediaQuery.addEventListener("change", updateMatches);
+    return () => mediaQuery.removeEventListener("change", updateMatches);
+  }, [query]);
+
+  return matches;
+}
+
 function App() {
   const [activeView, setActiveView] = useState<View>("workspaces");
   const [scannedRepositories, setScannedRepositories] = useState<RepositoryInfo[]>(isTauri ? [] : demoRepositories);
@@ -1192,12 +1212,13 @@ function App() {
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewFilesLoading, setReviewFilesLoading] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const compactSplitLayout = useMediaQuery(COMPACT_SPLIT_LAYOUT_QUERY);
   const [sidebarWidth, setSidebarWidth] = useState(244);
   const [repoPanelWidth, setRepoPanelWidth] = useState(348);
   const [reviewListWidth, setReviewListWidth] = useState(360);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [repoPanelCollapsed, setRepoPanelCollapsed] = useState(false);
-  const [reviewListCollapsed, setReviewListCollapsed] = useState(false);
+  const [repoPanelCollapsed, setRepoPanelCollapsed] = useState(compactSplitLayout);
+  const [reviewListCollapsed, setReviewListCollapsed] = useState(compactSplitLayout);
   const [, startNavigationTransition] = useTransition();
 
   const repositories = useMemo(
@@ -1276,6 +1297,33 @@ function App() {
   const workspaceOperationInFlightRef = useRef(false);
   const reviewActionInFlightRef = useRef(false);
   const reviewQueueInFlightRef = useRef<{ key: string; generation: number } | null>(null);
+  const autoCompactRepoPanelRef = useRef(compactSplitLayout);
+  const autoCompactReviewListRef = useRef(compactSplitLayout);
+
+  useEffect(() => {
+    if (compactSplitLayout) {
+      setRepoPanelCollapsed((current) => {
+        if (current) return current;
+        autoCompactRepoPanelRef.current = true;
+        return true;
+      });
+      setReviewListCollapsed((current) => {
+        if (current) return current;
+        autoCompactReviewListRef.current = true;
+        return true;
+      });
+      return;
+    }
+
+    if (autoCompactRepoPanelRef.current) {
+      autoCompactRepoPanelRef.current = false;
+      setRepoPanelCollapsed(false);
+    }
+    if (autoCompactReviewListRef.current) {
+      autoCompactReviewListRef.current = false;
+      setReviewListCollapsed(false);
+    }
+  }, [compactSplitLayout]);
 
   useEffect(() => {
     if (toast) {
@@ -2171,6 +2219,16 @@ function App() {
     startNavigationTransition(() => setSelectedPr(number));
   }
 
+  function toggleRepoPanelCollapsed() {
+    autoCompactRepoPanelRef.current = false;
+    setRepoPanelCollapsed((current) => !current);
+  }
+
+  function toggleReviewListCollapsed() {
+    autoCompactReviewListRef.current = false;
+    setReviewListCollapsed((current) => !current);
+  }
+
   function startPaneResize(kind: "sidebar" | "repositories" | "review", event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault();
     const startX = event.clientX;
@@ -2255,7 +2313,7 @@ function App() {
             giteeEnterprise={Boolean(selectedRepo && repositoryGiteeEnterprise[selectedRepo.common_dir])}
             onGiteeEnterpriseChange={changeRepositoryGiteeEnterprise}
             repoPanelCollapsed={repoPanelCollapsed}
-            onToggleRepoPanelCollapsed={() => setRepoPanelCollapsed((current) => !current)}
+            onToggleRepoPanelCollapsed={toggleRepoPanelCollapsed}
             onStartRepoPanelResize={(event) => startPaneResize("repositories", event)}
             loading={loading}
           />
@@ -2281,7 +2339,7 @@ function App() {
             error={reviewError}
             tokenConfigured={Boolean(activeProviderToken)}
             listCollapsed={reviewListCollapsed}
-            onToggleListCollapsed={() => setReviewListCollapsed((current) => !current)}
+            onToggleListCollapsed={toggleReviewListCollapsed}
             onStartListResize={(event) => startPaneResize("review", event)}
             onRefresh={() => void loadReviewQueue(reviewQueueFilter, { force: true })}
             onLoadMore={() => void loadReviewQueue(reviewQueueFilter, { append: true })}
@@ -2371,17 +2429,21 @@ function App() {
         />
       )}
 
-      {updateMessage && (
-        <div className="toast toast-info update-status-toast">
-          {updateBusy ? <Loader2 className="spin" size={16} /> : <Bell size={16} />}
-          <span title={updateMessage}>{updateMessage}</span>
-        </div>
-      )}
+      {(updateMessage || toast) && (
+        <div className="toast-region" aria-live="polite" aria-atomic="true">
+          {updateMessage && (
+            <div className="toast toast-info update-status-toast">
+              {updateBusy ? <Loader2 className="spin" size={16} /> : <Bell size={16} />}
+              <span title={updateMessage}>{updateMessage}</span>
+            </div>
+          )}
 
-      {toast && (
-        <div className={`toast toast-${toast.tone}`}>
-          {toast.tone === "success" ? <Check size={16} /> : toast.tone === "error" ? <AlertCircle size={16} /> : <Bell size={16} />}
-          <span title={toast.message}>{toast.message}</span>
+          {toast && (
+            <div className={`toast toast-${toast.tone}`}>
+              {toast.tone === "success" ? <Check size={16} /> : toast.tone === "error" ? <AlertCircle size={16} /> : <Bell size={16} />}
+              <span title={toast.message}>{toast.message}</span>
+            </div>
+          )}
         </div>
       )}
       <FastOverflowTooltip />
@@ -2868,6 +2930,7 @@ function WorkspacesView({
                   value={selectedIde}
                   onChange={onIdeChange}
                   onOpen={() => onOpenPath(selectedRepo.root, selectedIde)}
+                  iconOnly={repoPanelCollapsed}
                 />
                 <button className="ghost-button repo-action-button" onClick={() => onOpenPath(selectedRepo.root, "file-manager")} title={t("repo.openFinder")}>
                   <FolderOpen size={16} />
@@ -2920,10 +2983,12 @@ function IdeOpenControl({
   value,
   onChange,
   onOpen,
+  iconOnly,
 }: {
   value: string;
   onChange: (ide: string) => void;
   onOpen: () => void;
+  iconOnly: boolean;
 }) {
   const { t } = useI18n();
   const editorLabel = getIdeLabel(value);
@@ -2934,6 +2999,11 @@ function IdeOpenControl({
   const pickerRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
+    if (iconOnly) {
+      setCompact(false);
+      return undefined;
+    }
+
     const control = controlRef.current;
     const measure = measureRef.current;
     if (!control || !measure) return undefined;
@@ -2966,33 +3036,38 @@ function IdeOpenControl({
       resizeObserver.disconnect();
       window.removeEventListener("resize", updateCompact);
     };
-  }, [editorLabel]);
+  }, [editorLabel, iconOnly]);
 
   return (
-    <div className={`ide-open-control ${compact ? "compact" : ""}`} data-ide={value} ref={controlRef}>
+    <div className={`ide-open-control ${compact && !iconOnly ? "compact" : ""} ${iconOnly ? "icon-only" : ""}`} data-ide={value} ref={controlRef}>
       <button
         type="button"
         className="ide-open-primary"
         onClick={onOpen}
         title={t("repo.openWith", { editor: editorLabel })}
+        aria-label={t("repo.openWith", { editor: editorLabel })}
       >
         {editorIcon ? <img className="editor-logo" src={editorIcon} alt="" aria-hidden="true" /> : <Code2 size={16} />}
-        <span>{editorLabel}</span>
+        {!iconOnly && <span>{editorLabel}</span>}
       </button>
-      <span className="ide-open-picker" title={t("repo.selectIde")} ref={pickerRef}>
-        <select
-          className="ide-open-select"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          aria-label={t("repo.selectIde")}
-        >
-          {IDE_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
-        <ChevronRight className="ide-open-chevron" size={15} />
-      </span>
-      <span className="ide-open-measure" ref={measureRef} aria-hidden="true">{editorLabel}</span>
+      {!iconOnly && (
+        <>
+          <span className="ide-open-picker" title={t("repo.selectIde")} ref={pickerRef}>
+            <select
+              className="ide-open-select"
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              aria-label={t("repo.selectIde")}
+            >
+              {IDE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <ChevronRight className="ide-open-chevron" size={15} />
+          </span>
+          <span className="ide-open-measure" ref={measureRef} aria-hidden="true">{editorLabel}</span>
+        </>
+      )}
     </div>
   );
 }
@@ -4015,6 +4090,10 @@ function NewWorktreeModal({
   const [createBranch, setCreateBranch] = useState(true);
   const [loading, setLoading] = useState(false);
   const { t } = useI18n();
+  const branchMatchesKnownRef = useMemo(
+    () => branches.some((item) => item.name === branch.trim()),
+    [branches, branch],
+  );
 
   useEffect(() => {
     void call<BranchInfo[]>("list_branches", { repoPath: repository.root })
@@ -4022,9 +4101,16 @@ function NewWorktreeModal({
       .catch(() => setBranches([]));
   }, [repository.root]);
 
+  useEffect(() => {
+    if (branchMatchesKnownRef) {
+      setCreateBranch(false);
+    }
+  }, [branchMatchesKnownRef]);
+
   function updateBranch(value: string) {
     setBranch(value);
     setWorktreePath(`${repository.root}.worktrees/${value.replace(/[/:]/g, "-")}`);
+    setCreateBranch(!branches.some((item) => item.name === value.trim()));
   }
 
   async function submit(event: FormEvent) {
@@ -4068,7 +4154,12 @@ function NewWorktreeModal({
           <input value={worktreePath} onChange={(event) => setWorktreePath(event.target.value)} title={worktreePath} />
         </label>
         <label className="toggle-line">
-          <input type="checkbox" checked={createBranch} onChange={(event) => setCreateBranch(event.target.checked)} />
+          <input
+            type="checkbox"
+            checked={createBranch}
+            disabled={branchMatchesKnownRef}
+            onChange={(event) => setCreateBranch(event.target.checked)}
+          />
           <span>{t("modal.createBranch")}</span>
         </label>
         <div className="modal-actions">
