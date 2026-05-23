@@ -1,6 +1,6 @@
 {
   "name": "workflow-studio",
-  "version": "0.1.12-preview.8",
+  "version": "0.1.12-preview.9",
   "private": true,
   "type": "module",
   "scripts": {

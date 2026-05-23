@@ -1,6 +1,6 @@
 [package]
 name = "workflow-studio"
-version = "0.1.12-preview.8"
+version = "0.1.12-preview.9"
 description = "A desktop studio for Git worktree management and code review workflows."
 authors = ["Codex"]
 edition = "2021"

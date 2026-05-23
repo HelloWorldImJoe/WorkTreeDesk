@@ -5141,7 +5141,7 @@ dependencies = [
 
 [[package]]
 name = "workflow-studio"
-version = "0.1.12-preview.8"
+version = "0.1.12-preview.9"
 dependencies = [
  "base64 0.22.1",
  "reqwest 0.12.28",
