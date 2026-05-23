@@ -1,39 +1,31 @@
 {
-  "version": "0.1.12-preview.6",
+  "version": "0.1.12-preview.7",
   "notes": "Preview channel build for WorktreeDesk. Use this release to validate upcoming changes before they graduate to stable. Updater manifest: updater/preview/latest.json.",
-  "pub_date": "2026-05-22T12:58:10.971Z",
+  "pub_date": "2026-05-23T08:52:29.650Z",
   "platforms": {
-    "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUnhWWUcrT1VDZ1FUN2h2TS9PTVE5bGJOS05aZzJmbEladFh2S0d0ZU03dzJIdHZzVGdReGNueHc1Y041WFUzL0dOTHJXdmdFc2g0Z25JMWtDN0RZYndnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NDU0NDYzCWZpbGU6V29ya3RyZWVEZXNrIFByZXZpZXcuYXBwLnRhci5negpZYmIxWkpNWEpzemFacW82aStZQk9OL2Jxb0dPTUt6bXpPQVhOeTI4UDVKL1ZlT28vcWJvc1JscmhoRU5LV2ZsaDJ2ODFlZGJ4eXg5NzcwVk93OVVBQT09Cg==",
-      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12-preview.6/WorktreeDesk.Preview_v0.1.12-preview.6_mac-arm64.app.tar.gz"
-    },
-    "darwin-aarch64-app": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUnhWWUcrT1VDZ1FUN2h2TS9PTVE5bGJOS05aZzJmbEladFh2S0d0ZU03dzJIdHZzVGdReGNueHc1Y041WFUzL0dOTHJXdmdFc2g0Z25JMWtDN0RZYndnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NDU0NDYzCWZpbGU6V29ya3RyZWVEZXNrIFByZXZpZXcuYXBwLnRhci5negpZYmIxWkpNWEpzemFacW82aStZQk9OL2Jxb0dPTUt6bXpPQVhOeTI4UDVKL1ZlT28vcWJvc1JscmhoRU5LV2ZsaDJ2ODFlZGJ4eXg5NzcwVk93OVVBQT09Cg==",
-      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12-preview.6/WorktreeDesk.Preview_v0.1.12-preview.6_mac-arm64.app.tar.gz"
-    },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUjN0SDBTeDU4ZXJxMWE0Q2FPV0k4aHhHM2V5bnBUM0FwUnFDeFJGV09UcFU2K2krWTBOK3AwNzF1d2dKWk1COGNjWHQ1R2J1aWJyaW93aWlFSlJlcVFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NDU0NTYwCWZpbGU6V29ya3RyZWVEZXNrIFByZXZpZXcuYXBwLnRhci5negp2OStqcnUvYmlZejA0cHV4TmFiM2crVDRIYkNqZmJiYnZlcnBKU2VMcDVrUjF5bitOT1FTanEraU9lQjlxNG4wdnFKM05hemRjdVJtcXhkZnF0NGtDZz09Cg==",
-      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12-preview.6/WorktreeDesk.Preview_v0.1.12-preview.6_mac-x64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUjJlZkxTK294aWhTS3FpKy93NUEzME1sS3dZLzBpZTdUYWU3REFYc3hnT1VVbTdsZHJwWElVcjdTeHZlSTZNMWs5OUdndTFWMjZJcnUrODArT04rWXdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NTI2MDkwCWZpbGU6V29ya3RyZWVEZXNrIFByZXZpZXcuYXBwLnRhci5negpVYmVZZS96NElCTnJuL2VzVXN5eFlBWFdsY0pTUnVZQUFVTEhFVVNxVVhpeldXcGFIdjRhaG9hNDJudkE3QXN2dnBWbHptMlR1ZXZFdit2ZnV5U29BUT09Cg==",
+      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12-preview.7/WorktreeDesk.Preview_v0.1.12-preview.7_mac-x64.app.tar.gz"
     },
     "darwin-x86_64-app": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUjN0SDBTeDU4ZXJxMWE0Q2FPV0k4aHhHM2V5bnBUM0FwUnFDeFJGV09UcFU2K2krWTBOK3AwNzF1d2dKWk1COGNjWHQ1R2J1aWJyaW93aWlFSlJlcVFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NDU0NTYwCWZpbGU6V29ya3RyZWVEZXNrIFByZXZpZXcuYXBwLnRhci5negp2OStqcnUvYmlZejA0cHV4TmFiM2crVDRIYkNqZmJiYnZlcnBKU2VMcDVrUjF5bitOT1FTanEraU9lQjlxNG4wdnFKM05hemRjdVJtcXhkZnF0NGtDZz09Cg==",
-      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12-preview.6/WorktreeDesk.Preview_v0.1.12-preview.6_mac-x64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUjJlZkxTK294aWhTS3FpKy93NUEzME1sS3dZLzBpZTdUYWU3REFYc3hnT1VVbTdsZHJwWElVcjdTeHZlSTZNMWs5OUdndTFWMjZJcnUrODArT04rWXdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NTI2MDkwCWZpbGU6V29ya3RyZWVEZXNrIFByZXZpZXcuYXBwLnRhci5negpVYmVZZS96NElCTnJuL2VzVXN5eFlBWFdsY0pTUnVZQUFVTEhFVVNxVVhpeldXcGFIdjRhaG9hNDJudkE3QXN2dnBWbHptMlR1ZXZFdit2ZnV5U29BUT09Cg==",
+      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12-preview.7/WorktreeDesk.Preview_v0.1.12-preview.7_mac-x64.app.tar.gz"
     },
     "linux-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUncrcEplS3dTWDBPL1JyUXBBNk5HZXFzdXRoZHlFcis0S1d0bHN0dlBaZGhsVG5PYlBxT21jendnZzZqT0ZvQUpCaHRDMEpDRnNtVGJzbFJCSlovYncwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NDU0NjAyCWZpbGU6V29ya3RyZWVEZXNrIFByZXZpZXdfMC4xLjEyLXByZXZpZXcuNl9hbWQ2NC5BcHBJbWFnZQoyTjlpckY5NzFzWHBrVUl6eEVNcFl0RzNXTWR0eFJtZ2xidWJNMlZuVnpCeVcxSGtheG14YnJmVWR1RnMxQWtDcjVJdDlzaWhnWFdyb2VMNEZudGhDdz09Cg==",
-      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12-preview.6/WorktreeDesk.Preview_v0.1.12-preview.6_linux-x64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUjUxVHBPR2hHMzJxbDRwVWNhOGdoTEJBbFhXVmRzcTRiOFdhTFVqUDJxM3dnekdvTSs2YkZoUGpSSU93Z0xZZXpjQjI3WWJFOGZtbE9jTncyVDY2ZUFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NTI2MjkxCWZpbGU6V29ya3RyZWVEZXNrIFByZXZpZXdfMC4xLjEyLXByZXZpZXcuN19hbWQ2NC5BcHBJbWFnZQovYk05aUFrVHFvMldCNVZYZytMZEJISlJ3TjdNcGM5dlZGdllWZm9QUVA5Wm1OcmFRYW5mb1lLRVFWc09IaXNmYXRQVTFDOXBNSTl3ZWRkc0ZHUjdBUT09Cg==",
+      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12-preview.7/WorktreeDesk.Preview_v0.1.12-preview.7_linux-x64.AppImage"
     },
     "linux-x86_64-appimage": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUncrcEplS3dTWDBPL1JyUXBBNk5HZXFzdXRoZHlFcis0S1d0bHN0dlBaZGhsVG5PYlBxT21jendnZzZqT0ZvQUpCaHRDMEpDRnNtVGJzbFJCSlovYncwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NDU0NjAyCWZpbGU6V29ya3RyZWVEZXNrIFByZXZpZXdfMC4xLjEyLXByZXZpZXcuNl9hbWQ2NC5BcHBJbWFnZQoyTjlpckY5NzFzWHBrVUl6eEVNcFl0RzNXTWR0eFJtZ2xidWJNMlZuVnpCeVcxSGtheG14YnJmVWR1RnMxQWtDcjVJdDlzaWhnWFdyb2VMNEZudGhDdz09Cg==",
-      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12-preview.6/WorktreeDesk.Preview_v0.1.12-preview.6_linux-x64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUjUxVHBPR2hHMzJxbDRwVWNhOGdoTEJBbFhXVmRzcTRiOFdhTFVqUDJxM3dnekdvTSs2YkZoUGpSSU93Z0xZZXpjQjI3WWJFOGZtbE9jTncyVDY2ZUFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NTI2MjkxCWZpbGU6V29ya3RyZWVEZXNrIFByZXZpZXdfMC4xLjEyLXByZXZpZXcuN19hbWQ2NC5BcHBJbWFnZQovYk05aUFrVHFvMldCNVZYZytMZEJISlJ3TjdNcGM5dlZGdllWZm9QUVA5Wm1OcmFRYW5mb1lLRVFWc09IaXNmYXRQVTFDOXBNSTl3ZWRkc0ZHUjdBUT09Cg==",
+      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12-preview.7/WorktreeDesk.Preview_v0.1.12-preview.7_linux-x64.AppImage"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUnc1SVNuYi9tSnJIRzFwRWVmd3ZKKzVBUmhoY3pMZEpGSE5Bcks4RHdDMWE1dWVPQjNGNXRxU2c1ejdKUFkrMG5sNUdNdTB3Z0ljdHBUdHF0Qk4rNmdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NDU0Njg4CWZpbGU6V29ya3RyZWVEZXNrIFByZXZpZXdfMC4xLjEyLXByZXZpZXcuNl94NjQtc2V0dXAuZXhlCmlvVUtEdGxDaTlKOHpaMnIzWmhDMUgzVkVqV3RGSU1xNWRpbnozazU1WVFxbjNFT0RvVW80YnBkMnc0bHhwM0tYWDY2SmwzMHlWZmlVQkhhKzVkMkRRPT0K",
-      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12-preview.6/WorktreeDesk.Preview_v0.1.12-preview.6_win-x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUjdDSGFSd1p4Ui9EZ0hlVjdhdG9KNHhONGkxbVUwSG9GM3JWcGMrWXNIUlcvKy9VU2FkZ2k3VmJFdTdacFE2eGdFUUUrazZ4VTVlQ3JLQ2VvWmdGS2dzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NTI2MzQ4CWZpbGU6V29ya3RyZWVEZXNrIFByZXZpZXdfMC4xLjEyLXByZXZpZXcuN194NjQtc2V0dXAuZXhlCjd6QmVDK0N4T3Z6Y1JJbmpCc1lxQkRabUVLUkpjY2pvWmFSRjZKbWMwbGhWS3RwVmh5eklYbTQ3dzk4a1NnVkd0ay9xck82eHhJeVBsbDN6WU1LMkNnPT0K",
+      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12-preview.7/WorktreeDesk.Preview_v0.1.12-preview.7_win-x64-setup.exe"
     },
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUnc1SVNuYi9tSnJIRzFwRWVmd3ZKKzVBUmhoY3pMZEpGSE5Bcks4RHdDMWE1dWVPQjNGNXRxU2c1ejdKUFkrMG5sNUdNdTB3Z0ljdHBUdHF0Qk4rNmdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NDU0Njg4CWZpbGU6V29ya3RyZWVEZXNrIFByZXZpZXdfMC4xLjEyLXByZXZpZXcuNl94NjQtc2V0dXAuZXhlCmlvVUtEdGxDaTlKOHpaMnIzWmhDMUgzVkVqV3RGSU1xNWRpbnozazU1WVFxbjNFT0RvVW80YnBkMnc0bHhwM0tYWDY2SmwzMHlWZmlVQkhhKzVkMkRRPT0K",
-      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12-preview.6/WorktreeDesk.Preview_v0.1.12-preview.6_win-x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUjdDSGFSd1p4Ui9EZ0hlVjdhdG9KNHhONGkxbVUwSG9GM3JWcGMrWXNIUlcvKy9VU2FkZ2k3VmJFdTdacFE2eGdFUUUrazZ4VTVlQ3JLQ2VvWmdGS2dzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NTI2MzQ4CWZpbGU6V29ya3RyZWVEZXNrIFByZXZpZXdfMC4xLjEyLXByZXZpZXcuN194NjQtc2V0dXAuZXhlCjd6QmVDK0N4T3Z6Y1JJbmpCc1lxQkRabUVLUkpjY2pvWmFSRjZKbWMwbGhWS3RwVmh5eklYbTQ3dzk4a1NnVkd0ay9xck82eHhJeVBsbDN6WU1LMkNnPT0K",
+      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12-preview.7/WorktreeDesk.Preview_v0.1.12-preview.7_win-x64-setup.exe"
     }
   }
 }
