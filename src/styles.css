@@ -631,6 +631,15 @@ textarea::placeholder {
   background: #0c86e4;
 }
 
+.primary-button.danger-button {
+  border-color: color-mix(in srgb, var(--red) 78%, #000);
+  background: var(--red);
+}
+
+.primary-button.danger-button:hover {
+  background: color-mix(in srgb, var(--red) 86%, #000);
+}
+
 .danger,
 .danger-text {
   color: var(--red);
@@ -994,9 +1003,9 @@ button:disabled {
 }
 
 .repo-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
   padding: 16px;
   border-bottom: 1px solid var(--line);
@@ -1005,8 +1014,8 @@ button:disabled {
 }
 
 .repo-header > div:first-child {
-  flex: 1 1 auto;
   min-width: 0;
+  max-width: 100%;
 }
 
 .repo-header h2,
@@ -1017,15 +1026,15 @@ button:disabled {
 }
 
 .repo-path-line {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
   align-items: center;
   gap: 6px;
-  width: fit-content;
-  max-width: min(620px, 52vw);
+  width: 100%;
+  max-width: min(620px, 100%);
 }
 
 .repo-path-line p {
-  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -1047,9 +1056,11 @@ button:disabled {
 }
 
 .repo-header .header-actions {
-  flex: 1 1 auto;
+  justify-self: end;
   justify-content: flex-end;
   min-width: 0;
+  max-width: 100%;
+  width: max-content;
 }
 
 @container (max-width: 740px) {
@@ -2677,6 +2688,21 @@ button:disabled {
   white-space: nowrap;
 }
 
+.settings-hint.warning-hint {
+  border-color: color-mix(in srgb, var(--amber) 50%, #3b424d);
+  background: color-mix(in srgb, var(--amber) 12%, #16181b);
+}
+
+.settings-hint.warning-hint svg {
+  color: var(--amber);
+}
+
+.settings-hint.warning-hint span {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .update-summary {
   display: flex;
   align-items: center;
@@ -2916,10 +2942,14 @@ button:disabled {
 }
 
 @media (max-width: 860px) {
-  .topbar,
-  .repo-header {
+  .topbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .repo-header {
+    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .scan-bar {
@@ -2999,8 +3029,8 @@ button:disabled {
   }
 
   .content-grid.repo-panel-collapsed .repo-header {
-    flex-direction: row;
-    align-items: flex-start;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    align-items: center;
     gap: 8px;
     padding: 8px 10px 10px;
   }

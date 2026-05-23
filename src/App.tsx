@@ -259,6 +259,12 @@ interface ReviewQueueState {
   loaded: boolean;
 }
 
+interface PendingWorktreeRemoval {
+  repo: RepositoryInfo;
+  worktree: WorktreeInfo;
+  status: WorktreeStatus;
+}
+
 interface WorkspaceFilterPreferences {
   searchQuery: string;
   platformSelection: GitPlatformSelection;
@@ -525,6 +531,9 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "modal.cleanupQuestion": "是否删除这个评审创建的临时工作区和 review/pr 临时分支？",
     "modal.keep": "保留",
     "modal.deleteTemp": "删除临时资源",
+    "modal.removeDirtyWorktree": "强制删除工作区？",
+    "modal.removeDirtyWorktreeQuestion": "这个工作区有未提交或未跟踪的变更。强制删除会丢弃这些变更。",
+    "modal.forceRemove": "强制删除",
     "modal.updateFound": "发现新版本",
     "modal.detectedVersion": "检测到新版本 {version}",
     "modal.currentVersion": "当前版本为 {version}",
@@ -734,6 +743,9 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "modal.cleanupQuestion": "Delete the temporary worktree and review/pr branch created for this review?",
     "modal.keep": "Keep",
     "modal.deleteTemp": "Delete temporary resources",
+    "modal.removeDirtyWorktree": "Force remove worktree?",
+    "modal.removeDirtyWorktreeQuestion": "This worktree has uncommitted or untracked changes. Force removal will discard those changes.",
+    "modal.forceRemove": "Force remove",
     "modal.updateFound": "New version found",
     "modal.detectedVersion": "New version {version} found",
     "modal.currentVersion": "Current version is {version}",
@@ -943,6 +955,9 @@ const I18N_MESSAGES: Record<AppLanguage, Record<string, string>> = {
     "modal.cleanupQuestion": "このレビュー用に作成された一時 Worktree と review/pr ブランチを削除しますか？",
     "modal.keep": "保持",
     "modal.deleteTemp": "一時リソースを削除",
+    "modal.removeDirtyWorktree": "Worktree を強制削除しますか？",
+    "modal.removeDirtyWorktreeQuestion": "この Worktree には未コミットまたは未追跡の変更があります。強制削除すると変更は破棄されます。",
+    "modal.forceRemove": "強制削除",
     "modal.updateFound": "新しいバージョン",
     "modal.detectedVersion": "新しいバージョン {version} を検出",
     "modal.currentVersion": "現在のバージョンは {version}",
@@ -1260,6 +1275,7 @@ function App() {
   const [language, setLanguage] = useState<AppLanguage>(loadLanguagePreference);
   const [codeReviewCleanupPreference, setCodeReviewCleanupPreference] = useState<CodeReviewCleanupPreference>(loadCodeReviewCleanupPreference);
   const [pendingCodeReviewCleanup, setPendingCodeReviewCleanup] = useState<PullRequestViewModel | null>(null);
+  const [pendingWorktreeRemoval, setPendingWorktreeRemoval] = useState<PendingWorktreeRemoval | null>(null);
   const [reviewQueues, setReviewQueues] = useState<Record<ReviewQueueStatus, ReviewQueueState>>(
     () => isTauri ? createEmptyReviewQueues() : createDemoReviewQueues(),
   );
@@ -2516,6 +2532,14 @@ function App() {
         />
       )}
 
+      {pendingWorktreeRemoval && (
+        <DirtyWorktreeRemovalModal
+          pending={pendingWorktreeRemoval}
+          onCancel={() => setPendingWorktreeRemoval(null)}
+          onForceRemove={() => void forceRemovePendingWorktree()}
+        />
+      )}
+
       {pendingUpdate && (
         <UpdateModal
           update={pendingUpdate}
@@ -2549,15 +2573,42 @@ function App() {
 
   async function removeWorktree(repo: RepositoryInfo | undefined, path: string) {
     if (!repo) return;
+    const worktree = repo.worktrees.find((item) => item.path === path);
+    const status = worktree ? getWorktreeStatus(worktree) : null;
+    if (worktree && status?.dirty) {
+      setPendingWorktreeRemoval({ repo, worktree, status });
+      return;
+    }
+
+    await executeRemoveWorktree(repo, path, false, worktree ?? null);
+  }
+
+  async function forceRemovePendingWorktree() {
+    const pending = pendingWorktreeRemoval;
+    if (!pending) return;
+    setPendingWorktreeRemoval(null);
+    await executeRemoveWorktree(pending.repo, pending.worktree.path, true, pending.worktree);
+  }
+
+  async function executeRemoveWorktree(repo: RepositoryInfo, path: string, force: boolean, worktree: WorktreeInfo | null) {
     await runWorkspaceOperation(async () => {
       try {
         const refreshed = await call<RepositoryInfo>("remove_worktree", {
-          request: { repo_path: repo.root, worktree_path: path, force: false },
+          request: { repo_path: repo.root, worktree_path: path, force },
         });
         updateRepository(refreshed);
         showToast("success", t("toast.workspaceRemoved"));
       } catch (error) {
-        showToast("error", getErrorMessage(error, t("error.operationFailed")));
+        const message = getErrorMessage(error, t("error.operationFailed"));
+        if (!force && worktree && isForceRemoveWorktreeError(message)) {
+          setPendingWorktreeRemoval({
+            repo,
+            worktree,
+            status: { ...getWorktreeStatus(worktree), dirty: true, summary: message },
+          });
+          return;
+        }
+        showToast("error", message);
       }
     });
   }
@@ -4409,6 +4460,50 @@ function CodeReviewCleanupModal({
   );
 }
 
+function DirtyWorktreeRemovalModal({
+  pending,
+  onCancel,
+  onForceRemove,
+}: {
+  pending: PendingWorktreeRemoval;
+  onCancel: () => void;
+  onForceRemove: () => void;
+}) {
+  const { t } = useI18n();
+  const branchLabel = pending.worktree.branch ?? (pending.worktree.detached ? t("repo.detached") : t("repo.bare"));
+  return (
+    <Modal title={t("modal.removeDirtyWorktree")} onClose={onCancel}>
+      <div className="modal-form">
+        <div className="settings-hint warning-hint">
+          <AlertCircle size={16} />
+          <span title={t("modal.removeDirtyWorktreeQuestion")}>
+            {t("modal.removeDirtyWorktreeQuestion")}
+          </span>
+        </div>
+        <label>
+          <span>{t("modal.path")}</span>
+          <div className="readonly-field" title={pending.worktree.path}>{pending.worktree.path}</div>
+        </label>
+        <div className="settings-hint">
+          <GitBranch size={16} />
+          <span title={branchLabel}>{branchLabel}</span>
+        </div>
+        <div className="settings-hint">
+          <CircleDot size={16} />
+          <span title={pending.status.summary}>{pending.status.summary}</span>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="ghost-button" onClick={onCancel}>{t("modal.cancel")}</button>
+          <button type="button" className="primary-button danger-button" onClick={onForceRemove}>
+            <Trash2 size={16} />
+            <span>{t("modal.forceRemove")}</span>
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function UpdateModal({
   update,
   updateBusy,
@@ -5328,6 +5423,11 @@ function getErrorMessage(error: unknown, fallback: string) {
   if (typeof error === "string") return error;
   if (error instanceof Error) return error.message;
   return fallback;
+}
+
+function isForceRemoveWorktreeError(message: string) {
+  const normalized = message.toLowerCase();
+  return normalized.includes("--force") || normalized.includes("modified or untracked") || normalized.includes("contains modified");
 }
 
 function getUpdateCheckErrorMessage(error: unknown, t: I18nRuntime["t"]) {
