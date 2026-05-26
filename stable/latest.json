@@ -1,0 +1,39 @@
+{
+  "version": "0.1.12",
+  "notes": "Stable channel release for WorkFlowStudio. This is the production-ready updater source. Updater manifest: updater/stable/latest.json.",
+  "pub_date": "2026-05-26T02:52:13.463Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUjVIcFNqdlpqTkthcGVIQng3MzVOejFUSjBiRWJROFpJa2RFMlJTN2pqNG9Wa1NLTUJBd1dCZ1RPRWxWanBQSkIrcG1LZFdUNjdMUS9vaEtLWXBLUndjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NzYzNjc3CWZpbGU6V29ya0Zsb3dTdHVkaW8uYXBwLnRhci5negpMNWM4UE54RFJQcTRGa1VIYUd4WXloVGZ2WDJBWFIraFZ3V2NDRzJVQ0dCcm5qdXRPMzNTdzRZUUpsY2M1SE55Yk1VcnJHNmJlOGg3QTBKb2l2c2JEQT09Cg==",
+      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12/WorkFlowStudio_v0.1.12_mac-arm64.app.tar.gz"
+    },
+    "darwin-aarch64-app": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUjVIcFNqdlpqTkthcGVIQng3MzVOejFUSjBiRWJROFpJa2RFMlJTN2pqNG9Wa1NLTUJBd1dCZ1RPRWxWanBQSkIrcG1LZFdUNjdMUS9vaEtLWXBLUndjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NzYzNjc3CWZpbGU6V29ya0Zsb3dTdHVkaW8uYXBwLnRhci5negpMNWM4UE54RFJQcTRGa1VIYUd4WXloVGZ2WDJBWFIraFZ3V2NDRzJVQ0dCcm5qdXRPMzNTdzRZUUpsY2M1SE55Yk1VcnJHNmJlOGg3QTBKb2l2c2JEQT09Cg==",
+      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12/WorkFlowStudio_v0.1.12_mac-arm64.app.tar.gz"
+    },
+    "darwin-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUjRkak5tYXBWbnRzVEVIL2RmZVJLWjlUU3czSnBaRWtZRndlSEcxcEUzbjQvWGcxVFZXanlrSzVicktMd1pEKzRnbHpyMVBsbVVlZjd3alFzdUhROXcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NzYzNzM4CWZpbGU6V29ya0Zsb3dTdHVkaW8uYXBwLnRhci5negpXS0l2aUxacnM4Z3JPV1YzUVNqZ0VlTDErdE9GZWRxb0YrWHBEa3prM2toRk8wQ1lrNHRpcHluVzZMaXhETzlkRUpBN3lUeUJ1cndibGhxaXJXWThCUT09Cg==",
+      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12/WorkFlowStudio_v0.1.12_mac-x64.app.tar.gz"
+    },
+    "darwin-x86_64-app": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUjRkak5tYXBWbnRzVEVIL2RmZVJLWjlUU3czSnBaRWtZRndlSEcxcEUzbjQvWGcxVFZXanlrSzVicktMd1pEKzRnbHpyMVBsbVVlZjd3alFzdUhROXcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NzYzNzM4CWZpbGU6V29ya0Zsb3dTdHVkaW8uYXBwLnRhci5negpXS0l2aUxacnM4Z3JPV1YzUVNqZ0VlTDErdE9GZWRxb0YrWHBEa3prM2toRk8wQ1lrNHRpcHluVzZMaXhETzlkRUpBN3lUeUJ1cndibGhxaXJXWThCUT09Cg==",
+      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12/WorkFlowStudio_v0.1.12_mac-x64.app.tar.gz"
+    },
+    "linux-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUjV1blI5alVlUUFPek1henY3ZGprYi9GY1E1L0lFeEtpbzhJc2YyTmREOEZWVEhuWExvczJ1OUY1bnJkTTRxdldDZlo3MVpTSWo1WERNUFc4NjhUUHdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NzYzODQ1CWZpbGU6V29ya0Zsb3dTdHVkaW9fMC4xLjEyX2FtZDY0LkFwcEltYWdlCmtVQ2l1d1JXVXZDVU1td09aa3JoZWk0N3JKREo3VU9aaXJsRmxtdmFNUzhKTkQvTlg2QVJNYzhhUE5tWmJyTXlKR0NnWHplMExzRXY2UkNSSmZJeEFRPT0K",
+      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12/WorkFlowStudio_v0.1.12_linux-x64.AppImage"
+    },
+    "linux-x86_64-appimage": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUjV1blI5alVlUUFPek1henY3ZGprYi9GY1E1L0lFeEtpbzhJc2YyTmREOEZWVEhuWExvczJ1OUY1bnJkTTRxdldDZlo3MVpTSWo1WERNUFc4NjhUUHdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NzYzODQ1CWZpbGU6V29ya0Zsb3dTdHVkaW9fMC4xLjEyX2FtZDY0LkFwcEltYWdlCmtVQ2l1d1JXVXZDVU1td09aa3JoZWk0N3JKREo3VU9aaXJsRmxtdmFNUzhKTkQvTlg2QVJNYzhhUE5tWmJyTXlKR0NnWHplMExzRXY2UkNSSmZJeEFRPT0K",
+      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12/WorkFlowStudio_v0.1.12_linux-x64.AppImage"
+    },
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUndETHFxdUZqS0IxU1kxS3czMjVScjIrZ09sdGw4UEFOSmorOEFDUlFVSGRaMVBsOW5OcVVMME1UV29ZMHhBT2VMZWRLVjR0K1ZraGk4eUNrTkllVFFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NzYzOTMxCWZpbGU6V29ya0Zsb3dTdHVkaW9fMC4xLjEyX3g2NC1zZXR1cC5leGUKZFE5MG5Lend4UXVTdjZUVlA5SUROVVI0b2ZYSjJ0NjV2UXZYRW5xT0lWcTJPV1lYN0pjTUxaSVVPMFZtUVhYVUlrR3VHRzUrUTNpT1lKdEJNQ0RIRFE9PQo=",
+      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12/WorkFlowStudio_v0.1.12_win-x64-setup.exe"
+    },
+    "windows-x86_64-nsis": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSbnlqQkEzQ2NkUndETHFxdUZqS0IxU1kxS3czMjVScjIrZ09sdGw4UEFOSmorOEFDUlFVSGRaMVBsOW5OcVVMME1UV29ZMHhBT2VMZWRLVjR0K1ZraGk4eUNrTkllVFFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5NzYzOTMxCWZpbGU6V29ya0Zsb3dTdHVkaW9fMC4xLjEyX3g2NC1zZXR1cC5leGUKZFE5MG5Lend4UXVTdjZUVlA5SUROVVI0b2ZYSjJ0NjV2UXZYRW5xT0lWcTJPV1lYN0pjTUxaSVVPMFZtUVhYVUlrR3VHRzUrUTNpT1lKdEJNQ0RIRFE9PQo=",
+      "url": "https://github.com/HelloWorldImJoe/WorkTreeDesk/releases/download/v0.1.12/WorkFlowStudio_v0.1.12_win-x64-setup.exe"
+    }
+  }
+}
