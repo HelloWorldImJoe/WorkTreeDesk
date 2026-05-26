@@ -5140,11 +5140,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "worktree-desk"
-version = "0.1.11"
+name = "workflow-studio"
+version = "0.1.12-preview.9"
 dependencies = [
  "base64 0.22.1",
  "reqwest 0.12.28",
+ "semver",
  "serde",
  "serde_json",
  "tauri",

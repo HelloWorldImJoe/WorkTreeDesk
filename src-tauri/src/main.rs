@@ -1,3 +1,4 @@
+//! 原生应用入口：启动 Tauri 运行时。
 fn main() {
-    worktree_desk_lib::run()
+    workflow_studio_lib::run()
 }

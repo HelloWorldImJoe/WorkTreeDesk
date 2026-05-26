@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "WorkFlowStudio Preview",
+  "identifier": "com.codex.workflowstudio.preview",
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://raw.githubusercontent.com/HelloWorldImJoe/WorkTreeDesk/updater/preview/latest.json"
+      ]
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "WorkFlowStudio Preview",
+        "width": 1326,
+        "height": 1037,
+        "minWidth": 720,
+        "minHeight": 520
+      }
+    ]
+  }
+}

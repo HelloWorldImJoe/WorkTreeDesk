@@ -1,3 +1,4 @@
+// Vite 配置：为 Tauri 前端提供 React 编译、固定端口和 HMR 设置。
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
